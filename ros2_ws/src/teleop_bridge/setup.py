@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'webrtc_node = teleop_bridge.main:main',
         ],
     },
 )
