@@ -1,0 +1,59 @@
+# # ==========================================
+# # 1. Unity (unity)
+# # ==========================================
+# /[Uu]nity/unity_humanoid/[Ll]ibrary/
+# /[Uu]nity/unity_humanoid/[Tt]emp/
+# /[Uu]nity/unity_humanoid/[Oo]bj/
+# /[Uu]nity/unity_humanoid/[Bb]uild/
+# /[Uu]nity/unity_humanoid/[Bb]uilds/
+# /[Uu]nity/unity_humanoid/[Ll]ogs/
+# /[Uu]nity/unity_humanoid/[Mm]emoryCaptures/
+# /[Uu]nity/unity_humanoid/UserSettings/
+
+# # Unity 자동 생성 프로젝트 파일들
+# /[Uu]nity/*.csproj
+# /[Uu]nity/*.sln
+# /[Uu]nity/*.unityproj
+# /[Uu]nity/*.userprefs
+
+# ==========================================
+# 2. Isaac Sim & Python (isaac)
+# ==========================================
+**/__pycache__/
+*.py[cod]
+*$py.class
+/[Ii]saac/logs/
+/[Ii]saac/data/
+/[Ii]saac/cache/
+
+.isaac_sim_last_run
+.ov/
+
+# ==========================================
+# 3. ROS 2 (ros2_ws)
+# ==========================================
+/[Rr]os2_ws/build/
+/[Rr]os2_ws/install/
+/[Rr]os2_ws/log/
+
+# ==========================================
+# 4. OS & Editors 
+# ==========================================
+.DS_Store
+.DS_Store?
+[Tt]humbs.db
+.vscode/
+.idea/
+*.swp
+*.bak
+*.tmp
+
+# ==========================================
+# 5. Git LFS 
+# ==========================================
+# *.usd
+# *.usda
+# *.usdc
+# *.fbx
+# *.asset
+# *.unitypackage
