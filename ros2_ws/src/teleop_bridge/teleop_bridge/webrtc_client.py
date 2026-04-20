@@ -12,8 +12,10 @@ class WebRTCClient:
         self.hw_image_track = hw_image_track
 
         # Add tracks
+        self.pc.addTransceiver("video", direction="sendonly")
+
         self.pc.addTrack(self.isaac_image_track)
-        self.pc.addTrack(self.hw_image_track)
+        # self.pc.addTrack(self.hw_image_track)
 
         # ICE
         @self.pc.on("icecandidate")
@@ -26,6 +28,10 @@ class WebRTCClient:
                     "sdpMLineIndex": candidate.sdpMLineIndex,
                 }
                 await self.ws.send(json.dumps(msg))
+        
+        @self.pc.on("connectionstatechange")
+        async def on_state_change():
+            print("Connection state:", self.pc.connectionState)
 
 
         print(f"WebRTC node initialized : {self.signaling_url}")
@@ -40,6 +46,9 @@ class WebRTCClient:
             # =====================
             offer = await self.pc.createOffer()
             await self.pc.setLocalDescription(offer)
+            
+            await asyncio.sleep(1)
+            print(self.pc.localDescription.sdp)
 
             message = {
                 "type": "offer",

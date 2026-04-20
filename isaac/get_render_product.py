@@ -3,15 +3,30 @@ import omni.usd
 
 stage = omni.usd.get_context().get_stage()
 
-camera_path = "/World/Camera"
+camera_path = "/World/franka/panda_hand/EE_Camera"
 
-print("=== Render Products for Camera ===")
+print("=== RenderProduct → Camera mapping ===")
+
+print("=== RenderProduct → Camera mapping ===")
 
 for prim in stage.Traverse():
+
     if prim.GetTypeName() == "RenderProduct":
-        rel = prim.GetRelationship("camera")
-        if rel:
-            targets = rel.GetTargets()
-            for t in targets:
-                if str(t) == camera_path:
-                    print("Found:", prim.GetPath())
+
+        print("RenderProduct:", prim.GetPath())
+
+        rel = prim.GetRelationship("inputs:camera")
+
+        if not rel:
+            print("  ❌ No camera linked")
+            continue
+
+        targets = rel.GetTargets()
+
+        if not targets:
+            print("  ❌ Empty camera target")
+            continue
+
+        for t in targets:
+            print("  → Camera:", t)
+

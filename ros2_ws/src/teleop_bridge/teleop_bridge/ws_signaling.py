@@ -12,8 +12,9 @@ async def handler(websocket):
             print("Received:", message)
 
             for client in clients:
-                if client != websocket:
-                    await client.send(message)
+                # if client != websocket:
+                #     await client.send(message)
+                await client.send(message)
 
     except:
         pass

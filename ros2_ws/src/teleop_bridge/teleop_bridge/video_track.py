@@ -10,10 +10,9 @@ class SimpleVideoTrack(VideoStreamTrack):
         self.latest_frame = None
 
     async def recv(self):
-
         await asyncio.sleep(1/30)
         pts, time_base = await self.next_timestamp()
-
+        
         if self.latest_frame is None:
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
         else:
