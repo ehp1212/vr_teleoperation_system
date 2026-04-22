@@ -1,17 +1,28 @@
 import asyncio
 import rclpy
+import threading
 
-from teleop_bridge.webrtc_client import WebRTCClient
-from teleop_bridge.image_subscriber import ImageSubscriber
-from teleop_bridge.video_track import SimpleVideoTrack
-from teleop_bridge.udp_pose_node import UDPPoseNode
+from .webrtc.webrtc_client import WebRTCClient
+from .ros.image_subscriber import ImageSubscriber
+from .webrtc.video_track import SimpleVideoTrack
 
 
+# =====================
+# ROS spin (thread)
+# =====================
+def ros_spin(node):
+    while rclpy.ok():
+        rclpy.spin_once(node, timeout_sec=0.01)
+
+
+# =====================
+# Async main
+# =====================
 async def async_main():
     rclpy.init()
 
     # =====================
-    # Track 
+    # Track
     # =====================
     isaac_track = SimpleVideoTrack("ISAAC")
     hw_track = SimpleVideoTrack("HARDWARE")
@@ -20,9 +31,17 @@ async def async_main():
     # ROS2 Node
     # =====================
     isaac_node = ImageSubscriber(isaac_track, "/camera/image_raw")
-    # hw_node = ImageSubscriber(hw_track, "/hw/image")  # 나중에
+    # hw_node = ImageSubscriber(hw_track, "/hw/image")
 
-    udp_node = UDPPoseNode()
+    # =====================
+    # ROS thread
+    # =====================
+    ros_thread = threading.Thread(
+        target=ros_spin,
+        args=(isaac_node,),  
+        daemon=True
+    )
+    ros_thread.start()
 
     # =====================
     # WebRTC Client
@@ -30,23 +49,17 @@ async def async_main():
     client = WebRTCClient(isaac_track, hw_track)
 
     # =====================
-    # ROS spin (async)
+    # Execute (reconnect loop inside client)
     # =====================
-    async def ros_spin():
-        while rclpy.ok():
-            rclpy.spin_once(isaac_node, timeout_sec=0.01)
-            udp_node.update()
-
-            await asyncio.sleep(0.01)
-
-    # =====================
-    # Execute
-    # =====================
-    await asyncio.gather(
-        client.connect_signaling(),
-        ros_spin()
-    )
+    await client.connect_loop()
 
 
+# =====================
+# Entry point
+# =====================
 def main():
     asyncio.run(async_main())
+
+
+if __name__ == "__main__":
+    main()
