@@ -5,16 +5,22 @@ import websockets
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.sdp import candidate_from_sdp
 
+from .rotation_processor import RotationProcessor
+from .control_processor import ControlProcessor
 
 class WebRTCClient:
-    def __init__(self, isaac_image_track, hw_image_track):
+    def __init__(self, teleop_node, isaac_image_track, hw_image_track):
         self.signaling_url = "ws://172.20.10.8:8765"
 
+        self.teleop_node = teleop_node
         self.isaac_image_track = isaac_image_track
         self.hw_image_track = hw_image_track
 
         self.pc = None
         self.ws = None
+
+        self.rotation_processor = RotationProcessor()
+        self.control_processor = ControlProcessor()
 
         print(f"WebRTC client initialized: {self.signaling_url}")
 
@@ -38,6 +44,22 @@ class WebRTCClient:
     # =====================
     async def connect_signaling(self):
         self.pc = RTCPeerConnection()
+
+        # Data channel
+        control_channel = self.pc.createDataChannel("control")
+
+        @control_channel.on("open")
+        def on_open():
+            print(f"DataChannel open")
+
+        @control_channel.on("message")
+        def on_message(message):
+            data = json.loads(message)
+            self.teleop_node.handle_message(data)
+            
+        @control_channel.on("close")
+        def on_close():
+            print(f"DataChannel close")
 
         # Track 
         self.pc.addTrack(self.isaac_image_track)
