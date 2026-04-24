@@ -31,7 +31,7 @@ async def handler(websocket):
             data = json.loads(message)
 
             sender = data.get("from")
-            if sender not in ["pc", "headset"]:
+            if not sender or sender not in ["pc", "headset"]:
                 print("Invalid sender:", sender)
                 continue
 
