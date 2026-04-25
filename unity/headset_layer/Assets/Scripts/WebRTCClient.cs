@@ -1,21 +1,45 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Net.NetworkInformation;
 using System.Text;
 using NativeWebSocket;
 using Unity.WebRTC;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class WebRTCClient : MonoBehaviour
 {
     [SerializeField] private string _ipAddress = "172.20.10.8";
 
+    [Header("Texture")]
+    [SerializeField] private RawImage _depthImage;
+    
     private RTCPeerConnection _pc;
     private WebSocket _ws;
     
     private RTCDataChannel _poseChannel;
     private float _timer = 0f;
-    private PoseMessage msg = new PoseMessage();
+    private PoseMessage msg = new();
+
+    private Texture2D _depthTexture;
+    private byte[] _depthBuffer;
+
+    private int _width = 320;
+    private int _height = 240;
+    
+    private bool hasNewDepthData;
+    private byte[] _lastestDepth;
+
+    private const float maxRange = 5.0f;
+
+    private void Awake()
+    {
+        _depthTexture = new Texture2D(_width, _height, TextureFormat.RGB24, false);
+        _depthBuffer = new byte[_width * _height * 3];
+        
+        _depthImage.texture = _depthTexture;
+    }
 
     async void Start()
     {
@@ -37,11 +61,56 @@ public class WebRTCClient : MonoBehaviour
         _timer += Time.deltaTime;
         
         _ws.DispatchMessageQueue();
-
+    
+        // Publish pose data 
         if (_timer > 0.02f)
         {
             SendPose();
             _timer = 0f;
+        }
+        
+        if (hasNewDepthData)
+        {
+            // header
+            var w = BitConverter.ToInt32(_lastestDepth, 0);
+            var h = BitConverter.ToInt32(_lastestDepth, 4);
+            var timestamp = BitConverter.ToDouble(_lastestDepth, 8);
+
+            // safety check
+            if (w <= 0 || h <= 0 || w > 4096 || h > 4096)
+            {
+                Debug.LogError($"Invalid depth size: {w}x{h}");
+                hasNewDepthData = false;
+                return;
+            }
+
+            if (w != _width || h != _height)
+            {
+                _width = w;
+                _height = h;
+
+                _depthTexture = new Texture2D(_width, _height, TextureFormat.RGB24, false);
+                _depthBuffer = new byte[_width * _height * 3];
+
+                _depthImage.texture = _depthTexture;
+            }
+
+            var expectedPayloadSize = _width * _height * 2; // float16
+            var actualPayloadSize = _lastestDepth.Length - 16;
+
+            if (actualPayloadSize < expectedPayloadSize)
+            {
+                Debug.LogWarning($"Incomplete depth payload: {actualPayloadSize}/{expectedPayloadSize}");
+                return;
+            }
+            
+            var depthBytes = new byte[expectedPayloadSize];
+            Buffer.BlockCopy(_lastestDepth, 16, depthBytes, 0, expectedPayloadSize);
+            
+            var depth = ConvertToFloat(depthBytes);
+            UpdateTexture(depth);
+            
+            hasNewDepthData = false;
         }
     }
 
@@ -54,6 +123,8 @@ public class WebRTCClient : MonoBehaviour
         var serializedMsg = CreatePoseMessage();
         _poseChannel.Send(serializedMsg);
     }
+
+    #region Web Socket Callbacks
 
     private void OnWsOnOnOpen()
     {
@@ -99,8 +170,6 @@ public class WebRTCClient : MonoBehaviour
             case "candidate":
                 return;
             case "ice":
-                Debug.Log("ICE received");
-
                 var candidate = new RTCIceCandidate(new RTCIceCandidateInit()
                 {
                     candidate = data.candidate,
@@ -113,18 +182,20 @@ public class WebRTCClient : MonoBehaviour
         }
     }
 
+    #endregion
+
     private IEnumerator HandleOffer(Message data)
     {
         _pc = new RTCPeerConnection();
 
         _pc.OnConnectionStateChange = state =>
         {
-            Debug.Log($"[Websocket] State: {state}");
+            Debug.Log($"[Websocket] Connection State: {state}");
         };
 
         _pc.OnIceConnectionChange = state =>
         {
-            Debug.Log($"[Websocket] State: {state}");
+            Debug.Log($"[Websocket] ICE State: {state}");
         };
 
         SetupPeerConnection();
@@ -180,7 +251,7 @@ public class WebRTCClient : MonoBehaviour
         _pc.OnDataChannel = channel =>
         {
             Debug.Log($"Data channel received: " + channel.Label);
-
+            
             switch (channel.Label)
             {
                 case "control":
@@ -225,56 +296,88 @@ public class WebRTCClient : MonoBehaviour
 
     private void SetUpDepthChannel(RTCDataChannel channel)
     {
-        var width = 0;
-        var height = 0;
-
-        var buffer = new List<byte>();
-        var receivingPayload = false;
-        
         channel.OnMessage = bytes =>
         {
-            Debug.Log("Received message: " + bytes.Length);
-            if (!receivingPayload)
+            if (bytes.Length < 16)
             {
-                // header
-                width = BitConverter.ToInt32(bytes, 0);
-                height = BitConverter.ToInt32(bytes, 4);
-                var timestamp = BitConverter.ToDouble(bytes, 8);
-
-                Debug.Log($"Depth Header: {width}x{height}: {timestamp}");
-
-                buffer.Clear();
-                receivingPayload = true;
+                Debug.LogWarning("Depth packet too small");
                 return;
             }
-            
-            buffer.AddRange(bytes);
-            
-            var expectedSize = width * height * 2; // float16
 
-            if (buffer.Count > expectedSize)
-            {
-                var depthBytes = buffer.ToArray();
-                ProcessDepth(depthBytes, width, height);
-                
-                receivingPayload = false;
-            }
+            hasNewDepthData = true;
+            _lastestDepth = bytes;
         };
-        
     }
 
-    private void ProcessDepth(byte[] depthBytes, int width, int height)
+    private float[] ConvertToFloat(byte[] bytes)
     {
-        var count = depthBytes.Length / 2;
-        var depth = new float[count];
+        var count = bytes.Length / 2;
+        var result = new float[count];
 
-        for (int i = 0; i < count; i++)
+        for (var i = 0; i < count; i++)
         {
-            var half = BitConverter.ToUInt16(depthBytes, i * 2);
-            depth[i] = half;
+            var half = BitConverter.ToUInt16(bytes, i * 2);
+            result[i] = HalfToFloat(half);
         }
-        
-        Debug.Log("Depth sample: " + depth[0]);
+
+        return result;
+    }
+
+    private float HalfToFloat(ushort value)
+    {
+        var sign = (value >> 15) & 0x00000001;
+        var exponent = (value >> 10) & 0x0000001F;
+        var mantissa = value & 0x000003FF;
+
+        if (exponent == 0)
+        {
+            if (mantissa == 0)
+            {
+                return sign == 1 ? -0.0f : 0.0f;
+            }
+            else
+            {
+                return (float)((sign == 1 ? -1 : 1) *
+                               mantissa *
+                               Math.Pow(2, -24));
+            }
+        }
+        else if (exponent == 31)
+        {
+            if (mantissa == 0)
+            {
+                return sign == 1 ? float.NegativeInfinity : float.PositiveInfinity;
+            }
+            else
+            {
+                return float.NaN;
+            }
+        }
+
+        return (float)((sign == 1 ? -1 : 1) *
+                       (1 + mantissa / 1024.0) *
+                       Math.Pow(2, exponent - 15));
+    }
+
+    // Convert data to texture
+    private void UpdateTexture(float[] depth)
+    {
+        var count = Mathf.Min(depth.Length, _depthBuffer.Length);
+        for (var i = 0; i < count; i++)
+        {
+            var d = depth[i];
+            var normalized = Mathf.Clamp01(d / maxRange);
+            var v = (byte)(normalized * 255);
+
+            var idx = i * 3;
+            
+            _depthBuffer[idx + 0] = v;
+            _depthBuffer[idx + 1] = v;
+            _depthBuffer[idx + 2] = v;
+        }
+
+        _depthTexture.LoadRawTextureData(_depthBuffer);
+        _depthTexture.Apply();
     }
 
     private void SendJson(object obj)
