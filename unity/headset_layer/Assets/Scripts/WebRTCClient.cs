@@ -12,8 +12,14 @@ public class WebRTCClient : MonoBehaviour
     private const string renderStage = "render";
     private const string recvStage = "recv";
     
+    [Header("Connection")]
     [SerializeField] private string _ipAddress = "172.20.10.8";
 
+    [Header("Control")]
+    [SerializeField] private Transform _target;
+    [SerializeField] private float _rotationDeadzone = 0.2f;
+    private Quaternion _lastSentRotation = Quaternion.identity;
+    
     [Header("Texture")]
     [SerializeField] private RawImage _rgbImage;
     [SerializeField] private RawImage _depthImage;
@@ -32,22 +38,9 @@ public class WebRTCClient : MonoBehaviour
 
     private Utils.Logger _logger;
     
-    // Texture reuse
-    private Texture2D _rgbTex2D;
-    private Texture2D _depthTex2D;
-
-    // frame tracking
-    private int _lastRgbFrameId = -1;
-    private int _lastDepthFrameId = -1;
-    private double _lastRecvTsRgb;
-    private bool _newRgbFrame;
+    private double _lastPoseSentTime; 
+    private double _lastFrameTime;    
     
-    private Texture _prevRgbTex;
-    private Texture _prevDepthTex;
-
-    private double _lastRecvTsDepth;
-    private bool _newDepthFrame;
-
     public Texture2D DepthImage
     {
         get
@@ -79,75 +72,35 @@ public class WebRTCClient : MonoBehaviour
 
     private void Update()
     {
-        _timer += Time.deltaTime;
         _ws.DispatchMessageQueue();
-
         var now = Time.realtimeSinceStartupAsDouble;
-        
-        /* =========================
-         * RECV (frame arrival detect)
-         * ========================= */
+
         if (_rgbImage.texture != null)
         {
-            if (_rgbImage.texture != _prevRgbTex)
-            {
-                _lastRecvTsRgb = now;
-                _prevRgbTex = _rgbImage.texture;
-                _newRgbFrame = true;
+            var displayLatency = (now - _lastPoseSentTime) * 1000.0;
+        
+            var frameGap = (now - _lastFrameTime) * 1000.0;
+            _lastFrameTime = now;
 
-                _logger.Log("recv", 0, _lastRecvTsRgb, "rgb"); // frame_id는 지금 무의미
+            _logger.Log("render", 0, now, "rgb");
+
+            if (_telemetryUI != null)
+            {
+                _telemetryUI.UpdateTelemetry(new TelemetryData
+                {
+                    renderTs = now,
+                    latencyMs = displayLatency,
+                    frameGapMs = frameGap,
+                    isNewFrame = true
+                });
             }
         }
 
-        if (_depthImage.texture != null)
-        {
-            if (_depthImage.texture != _prevDepthTex)
-            {
-                _lastRecvTsDepth = now;
-                _prevDepthTex = _depthImage.texture;
-                _newDepthFrame = true;
-
-                _logger.Log("recv", 0, _lastRecvTsDepth, "depth");
-            }
-        }
-
-        /* =========================
-         * RENDER
-         * ========================= */
-        double renderTs = now;
-
-        if (_lastRecvTsRgb > 0)
-        {
-            _logger.Log("render", 0, renderTs, "rgb");
-        }
-
-        if (_lastRecvTsDepth > 0)
-        {
-            _logger.Log("render", 0, renderTs, "depth");
-        }
-
-        /* =========================
-         * TELEMETRY
-         * ========================= */
-        if (_telemetryUI != null && _lastRecvTsRgb > 0)
-        {
-            var data = new TelemetryData
-            {
-                recvTs = _lastRecvTsRgb,
-                renderTs = renderTs,
-                isNewFrame = _newRgbFrame
-            };
-
-            _telemetryUI.UpdateTelemetry(data);
-            _newRgbFrame = false;
-        }
-
-        /* =========================
-         * Pose
-         * ========================= */
+        _timer += Time.deltaTime;
         if (_timer > 0.02f)
         {
             SendPose();
+            _lastPoseSentTime = now; // 송신 시점 기록
             _timer = 0f;
         }
     }
@@ -271,6 +224,7 @@ public class WebRTCClient : MonoBehaviour
 
                 videoStreamTrack.OnVideoReceived += texture =>
                 {
+                    Debug.Log("called");
                     if (slot == 0) // RGB
                     {
                         _rgbImage.texture = texture;
@@ -300,12 +254,18 @@ public class WebRTCClient : MonoBehaviour
         if (_poseChannel == null || _poseChannel.ReadyState != RTCDataChannelState.Open)
             return;
 
-        var q = transform.rotation;
+        var currentRot = _target.rotation;
+
+        var angleDiff = Quaternion.Angle(_lastSentRotation, currentRot);
+        if (angleDiff < _rotationDeadzone)
+            return;
 
         msg.type = "input";
-        msg.rotation = new Vector4(q.x, q.y, q.z, q.w);
+        msg.rotation = new Vector4(currentRot.x, currentRot.y, currentRot.z, currentRot.w);
 
         _poseChannel.Send(JsonUtility.ToJson(msg));
+    
+        _lastSentRotation = currentRot;
     }
 
     // ======================
@@ -321,33 +281,5 @@ public class WebRTCClient : MonoBehaviour
     private void SendJson(object obj)
     {
         _ws.SendText(JsonUtility.ToJson(obj));
-    }
-    
-    private Texture2D ConvertToTexture2D(Texture tex, ref Texture2D reusable)
-    {
-        if (reusable == null || reusable.width != tex.width || reusable.height != tex.height)
-        {
-            reusable = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
-        }
-
-        var rt = RenderTexture.GetTemporary(
-            tex.width,
-            tex.height,
-            0,
-            RenderTextureFormat.ARGB32
-        );
-
-        Graphics.Blit(tex, rt);
-
-        var prev = RenderTexture.active;
-        RenderTexture.active = rt;
-
-        reusable.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
-        reusable.Apply();
-
-        RenderTexture.active = prev;
-        RenderTexture.ReleaseTemporary(rt);
-
-        return reusable;
     }
 }

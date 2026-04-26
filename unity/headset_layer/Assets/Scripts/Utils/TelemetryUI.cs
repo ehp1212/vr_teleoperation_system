@@ -5,60 +5,66 @@ namespace Utils
 {
     public struct TelemetryData
     {
-        public double recvTs;
         public double renderTs;
+        public double latencyMs;
+        public double frameGapMs;
         public bool isNewFrame;
     }
     
     public class TelemetryUI : MonoBehaviour
     {
         [SerializeField] private TextMeshProUGUI _text;
-
-        private double _lastRecvTs;
-        private double _lastRenderTs;
+        [SerializeField] private float _uiUpdateInterval = 0.2f;
 
         private int _frameCount;
-        private float _timeAccum;
+        private float _fpsTimeAccum;
+        private float _uiTimeAccum;
         private float _fps;
+        
+        private double _currentLatency;
+        private double _currentFrameGap;
 
-        private double _latencyMs;
-
-        // =========================
-        // 외부에서 데이터 받기
-        // =========================
         public void UpdateTelemetry(TelemetryData data)
         {
-            _lastRecvTs = data.recvTs;
-            _lastRenderTs = data.renderTs;
-
             if (data.isNewFrame)
+            {
                 _frameCount++;
-
-            // latency 계산
-            _latencyMs = (_lastRenderTs - _lastRecvTs) * 1000.0;
+                _currentLatency = data.latencyMs;
+                _currentFrameGap = data.frameGapMs;
+            }
         }
-        
-        // =========================
-        // 매 프레임 UI 업데이트
-        // =========================
+
         void Update()
         {
-            _timeAccum += Time.deltaTime;
+            var deltaTime = Time.deltaTime;
+            _fpsTimeAccum += deltaTime;
+            _uiTimeAccum += deltaTime;
 
-            if (_timeAccum > 1.0f)
+            if (_fpsTimeAccum >= 1.0f)
             {
-                _fps = _frameCount / _timeAccum;
-
+                _fps = _frameCount / _fpsTimeAccum;
                 _frameCount = 0;
-                _timeAccum = 0f;
+                _fpsTimeAccum = 0f;
             }
 
-            if (_text != null)
+            if (_uiTimeAccum >= _uiUpdateInterval)
             {
-                _text.text =
-                    $"Latency: {_latencyMs:F1} ms\n" +
-                    $"FPS: {_fps:F1}";
+                UpdateUIText();
+                _uiTimeAccum = 0f;
             }
+        }
+
+        private void UpdateUIText()
+        {
+            if (_text == null) return;
+
+            var latencyColor = _currentLatency > 150 ? "red" : "white";
+            var gapColor = _currentFrameGap > 50 ? "yellow" : "white";
+
+            _text.text = 
+                $"<b>Rendering FPS:</b> {_fps:F1}\n" +
+                $"<b>Display Latency:</b> <color={latencyColor}>{_currentLatency:F1} ms</color>\n" +
+                $"<b>Frame Gap:</b> <color={gapColor}>{_currentFrameGap:F1} ms</color>";
         }
     }
 }
