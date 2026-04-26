@@ -5,9 +5,13 @@ from rclpy.executors import MultiThreadedExecutor
 
 from .webrtc.webrtc_client import WebRTCClient
 from .ros.image_subscriber import ImageSubscriber
-from .ros.teleop_publisher import TeleopNode
-from .webrtc.video_track import SimpleVideoTrack
+from .ros.depth_subscriber import DepthSubscriber
+from .ros.tele_op_node import TeleopNode
 
+from .webrtc.video_track import SimpleVideoTrack
+from .webrtc.depth_track import DepthVideoTrack
+
+from teleop_bridge.utils.logger import logger
 
 # =====================
 # ROS spin (thread)
@@ -34,13 +38,17 @@ async def async_main():
     # =====================
     # Track
     # =====================
-    isaac_track = SimpleVideoTrack("ISAAC")
+    isaac_rgb_track = SimpleVideoTrack("rgb")
+    issac_depth_track = DepthVideoTrack("depth")
+
     hw_track = SimpleVideoTrack("HARDWARE")
 
     # =====================
     # ROS2 Node
     # =====================
-    isaac_node = ImageSubscriber(isaac_track, "/camera/image_raw")
+    isaac_image_node = ImageSubscriber(isaac_rgb_track, "/camera/rgb/image_raw")
+    isaac_depth_node = DepthSubscriber(issac_depth_track, "/camera/depth/image_raw")
+
     # hw_node = ImageSubscriber(hw_track, "/hw/image")
 
     teleop_node = TeleopNode()
@@ -50,7 +58,7 @@ async def async_main():
     # =====================
     ros_thread = threading.Thread(
         target=ros_spin,
-        args=([isaac_node, teleop_node],),
+        args=([isaac_image_node, isaac_depth_node, teleop_node],),
         daemon=True
     )
     ros_thread.start()
@@ -58,7 +66,7 @@ async def async_main():
     # =====================
     # WebRTC Client
     # =====================
-    client = WebRTCClient(teleop_node, isaac_track, hw_track)
+    client = WebRTCClient(teleop_node, isaac_rgb_track, issac_depth_track, hw_track)
 
     # =====================
     # Execute (reconnect loop inside client)
@@ -74,4 +82,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # logger.log("program_start")
     main()
+    # logger.log("program_end")

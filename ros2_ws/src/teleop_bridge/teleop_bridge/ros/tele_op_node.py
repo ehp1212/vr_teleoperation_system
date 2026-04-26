@@ -7,6 +7,9 @@ from geometry_msgs.msg import Vector3
 from teleop_bridge.webrtc.rotation_processor import RotationProcessor
 from teleop_bridge.webrtc.control_processor import ControlProcessor
 
+import time
+from teleop_bridge.utils.logger import logger
+
 class TeleopNode(Node):
     def __init__(self):
         super().__init__('teleop_node')
@@ -75,5 +78,5 @@ class TeleopNode(Node):
         msg.x = yaw
         msg.y = pitch
         msg.z = 0.0
-        print(f"{msg.x} - {msg.y}")
+        
         self.pub_pose.publish(msg)

@@ -2,14 +2,15 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
-from teleop_bridge.utils.logger import logger
+import numpy as np
 import time
+from teleop_bridge.utils.logger import logger
 
-class ImageSubscriber(Node):
-    def __init__(self, track, topic_name="/camera/image_raw"):
-        super().__init__("image_subscriber")
+class DepthSubscriber(Node):
+    def __init__(self, depth_track, topic_name="/camera/depth/image_raw"):
+        super().__init__("depth_subscriber")
 
-        self.track = track
+        self.depth_track = depth_track
         self.bridge = CvBridge()
 
         self.subscription = self.create_subscription(
@@ -22,16 +23,15 @@ class ImageSubscriber(Node):
         self.frame_id = 0
         print(f"[ROS2] Subscribed to {topic_name}")
 
+
     def callback(self, msg):
         self.frame_id += 1
         ts = time.time()
-        logger.log("rgb_capture", self.frame_id, ts)
+        logger.log("depth_capture", self.frame_id, ts)
 
         try:
-            # ROS2 Image → OpenCV (numpy)
-            rgb = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-
-            self.track.update(rgb, ts, self.frame_id)
-
+            depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1")
+            self.depth_track.update(depth, ts, self.frame_id)
         except Exception as e:
             print(f"[ROS2] Error: {e}")
+

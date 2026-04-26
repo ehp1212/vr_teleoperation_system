@@ -2,18 +2,25 @@ import asyncio
 import json
 import websockets
 
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCConfiguration, RTCIceServer
 from aiortc.sdp import candidate_from_sdp
 
 from .rotation_processor import RotationProcessor
 from .control_processor import ControlProcessor
 
+import time
+def log(tag, *args):
+    print(f"[{time.time():.3f}][{tag}]", *args)
+
 class WebRTCClient:
-    def __init__(self, teleop_node, isaac_image_track, hw_image_track):
+    def __init__(self, teleop_node, isaac_image_track, isaac_depth_track,
+                  hw_image_track):
         self.signaling_url = "ws://172.20.10.8:8765"
 
         self.teleop_node = teleop_node
         self.isaac_image_track = isaac_image_track
+        self.isaac_depth_track = isaac_depth_track
+
         self.hw_image_track = hw_image_track
 
         self.pc = None
@@ -22,6 +29,8 @@ class WebRTCClient:
         self.rotation_processor = RotationProcessor()
         self.control_processor = ControlProcessor()
 
+        self.connected = False
+
         print(f"WebRTC client initialized: {self.signaling_url}")
 
     # =====================
@@ -29,47 +38,34 @@ class WebRTCClient:
     # =====================
     async def connect_loop(self):
         while True:
-            try:
-                print("Connecting to signaling...")
-                await self.connect_signaling()
+            if not self.connected:
+                try:
+                    print("Connecting to signaling...")
+                    await self.connect_signaling()
 
-            except Exception as e:
-                print("Connection error:", e)
+                except Exception as e:
+                    print("Connection error:", e)
 
-            print("retry in 2s...")
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
 
     # =====================
     # Signaling
     # =====================
     async def connect_signaling(self):
-        self.pc = RTCPeerConnection()
+        config = RTCConfiguration(
+            iceServers=[
+                RTCIceServer(urls=["stun:stun.l.google.com:19302"])
+            ]
+        )
 
-        # Data channel
-        control_channel = self.pc.createDataChannel("control")
-
-        @control_channel.on("open")
-        def on_open():
-            print(f"DataChannel open")
-
-        @control_channel.on("message")
-        def on_message(message):
-            data = json.loads(message)
-            self.teleop_node.handle_message(data)
-            
-        @control_channel.on("close")
-        def on_close():
-            print(f"DataChannel close")
-
-        # Track 
-        self.pc.addTrack(self.isaac_image_track)
-        # self.pc.addTrack(self.hw_image_track)
+        self.pc = RTCPeerConnection(configuration=config)
 
         # =====================
         # ICE candidate 
         # =====================
         @self.pc.on("icecandidate")
         async def on_icecandidate(candidate):
+            print("[ICE SEND]", candidate)
             if candidate is not None and self.ws is not None:
                 msg = {
                     "type": "ice",
@@ -85,11 +81,40 @@ class WebRTCClient:
         # =====================
         @self.pc.on("connectionstatechange")
         async def on_state_change():
-            print("Connection state:", self.pc.connectionState)
+            state = self.pc.connectionState
+            log("PC", self.pc.connectionState)
+            
+            if state == "connected":
+                self.connected = True                
 
-            if self.pc.connectionState in ["failed", "disconnected", "closed"]:
-                await self.pc.close()
-                raise Exception("WebRTC disconnected")
+            if self.pc.connectionState in ["failed", "closed"]:
+                self.connected = False
+
+        # control channel (unity -> ros2)
+        control_channel = self.pc.createDataChannel(
+            "control",
+            ordered=False,
+            maxRetransmits=0
+        )
+
+        @control_channel.on("open")
+        def on_open():
+            print(f"[DATACHANNEL] Control - open")
+
+        @control_channel.on("message")
+        def on_message(message):
+            data = json.loads(message)
+            self.teleop_node.handle_message(data)
+            
+        @control_channel.on("close")
+        def on_close():
+            print(f"[DATACHANNEL] Control - close")
+
+        # Track 
+        self.pc.addTrack(self.isaac_image_track)
+        self.pc.addTrack(self.isaac_depth_track)
+
+        # self.pc.addTrack(self.hw_image_track)
 
         # =====================
         # WebSocket
@@ -126,6 +151,18 @@ class WebRTCClient:
                         offer = await self.pc.createOffer()
                         await self.pc.setLocalDescription(offer)
 
+                        while self.pc.iceGatheringState != "complete":
+                            await asyncio.sleep(0.1)
+
+                        print("ICE gathering state:", self.pc.iceGatheringState)
+
+                        sdp = self.pc.localDescription.sdp
+                        print("SDP has candidate:", "a=candidate" in sdp)
+
+                        for line in sdp.splitlines():
+                            if line.startswith("a=candidate"):
+                                print("[SDP CANDIDATE]", line)
+
                         await ws.send(json.dumps({
                             "type": "offer",
                             "sdp": self.pc.localDescription.sdp,
@@ -154,11 +191,22 @@ class WebRTCClient:
                 elif msg_type == "ice":
                     print("Received ICE candidate")
 
-                    ice = candidate_from_sdp(data["candidate"])
-                    ice.sdpMid = data["sdpMid"]
-                    ice.sdpMLineIndex = data["sdpMLineIndex"]
+                    candidate_sdp = data.get("candidate")
+                    if not candidate_sdp:
+                        print("[ICE] empty candidate")
+                        continue
 
-                    await self.pc.addIceCandidate(ice)
+                    ice = candidate_from_sdp(candidate_sdp)
+
+                    ice.sdpMid = data.get("sdpMid")
+                    ice.sdpMLineIndex = data.get("sdpMLineIndex", 0)
+
+                    try:
+                        await self.pc.addIceCandidate(ice)
+                    except Exception as e:
+                        print("[ICE] addIceCandidate failed:", e)
+
+                    print("[ICE] mid:", ice.sdpMid, "index:", ice.sdpMLineIndex)
 
         # Clean up
         self.ws = None
