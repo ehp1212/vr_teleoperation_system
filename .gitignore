@@ -57,3 +57,7 @@
 # *.fbx
 # *.asset
 # *.unitypackage
+
+unity/headset_layer/unity_log.jsonl
+
+unity/headset_layer/Assets/TextMesh Pro/

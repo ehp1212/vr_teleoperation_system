@@ -48,6 +48,16 @@ public class WebRTCClient : MonoBehaviour
     private double _lastRecvTsDepth;
     private bool _newDepthFrame;
 
+    public Texture2D DepthImage
+    {
+        get
+        {
+            if (_depthImage == null) return null;
+            
+            return _depthImage.texture as Texture2D;
+        }
+    }
+
     private void Awake()
     {
         _logger = new Utils.Logger("unity_log.jsonl");
