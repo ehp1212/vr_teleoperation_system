@@ -15,7 +15,6 @@ public class DepthTextureVisualizer : MonoBehaviour
 
     private void Update()
     {
-        Debug.Log(_webRTCClient.DepthImage);
         if (_depthHeatmapImage.texture == null)
         {
             _depthHeatmapImage.texture = _webRTCClient.DepthImage;

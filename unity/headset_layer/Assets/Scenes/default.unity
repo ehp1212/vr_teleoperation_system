@@ -1052,6 +1052,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1506403446}
   - component: {fileID: 1506403447}
+  - component: {fileID: 1506403448}
   m_Layer: 0
   m_Name: Websocket
   m_TagString: Untagged
@@ -1090,6 +1091,22 @@ MonoBehaviour:
   _rgbImage: {fileID: 494283570}
   _depthImage: {fileID: 503617172}
   _telemetryUI: {fileID: 1256586194}
+--- !u!114 &1506403448
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1506403445}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cddcdfd49909ee84b8df9bafbb8a1bec, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: '::'
+  depthSource: {fileID: 503617172}
+  colorSource: {fileID: 494283570}
+  pcMaterial: {fileID: 2100000, guid: 6346fd10da3afa7489f1ce728bd77411, type: 2}
+  pointSize: 0.04
 --- !u!1 &1583436071
 GameObject:
   m_ObjectHideFlags: 0
