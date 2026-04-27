@@ -111,12 +111,21 @@ Virtual environment for simulation and testing.
 - **ROS2-based modular architecture**
   - Scalable integration of hardware and simulation
 
-# Latency Analysis
+## Performance Analysis
 
-We measured relative end-to-end latency from capture (ROS2 Bridge) to rendering (VR Headset) using timestamp alignment.
+Due to unsynchronized clocks between systems, absolute end-to-end latency could not be measured.
 
-Absolute latency cannot be measured due to unsynchronized system clocks
-However, relative latency trends and jitter are accurately captured, enabling analysis of system stability and performance
+Instead, we analyze rendering performance using:
+
+- Frame interval (ms)
+- Frame jitter
+- FPS stability
+
+### Key Observations
+
+- Mean FPS: ~104
+- Frame interval is stable on average
+- Jitter indicates occasional instability in streaming
 
 ## Results Overview
 
