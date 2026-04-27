@@ -7,30 +7,37 @@ class RotationProcessor:
 
 
     def process(self, q):
-        x,y,z,w = q
+        ux, uy, uz, uw = q
 
         # --------------------
-        # UNITY -> ROS2
+        # UNITY(Left) -> ROS2(Right) Coordinate Mapping
         # --------------------
-        qx = z
-        qy = -x
-        qz = y
-        qw = w
+        # Unity: X(Right), Y(Up), Z(Forward)
+        # ROS2:  X(Forward), Y(Left), Z(Up)
+        # ROS_x = Unity_z, ROS_y = -Unity_x, ROS_z = Unity_y
+        qx = uz
+        qy = ux
+        qz = -uy
+        qw = uw
 
         # --------------------
-        # YAW, Pitch
+        # YAW (Z-axis rotation)
         # --------------------
         siny_cosp = 2.0 * (qw * qz + qx * qy)
         cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz)
         yaw = math.atan2(siny_cosp, cosy_cosp)
 
+        # --------------------
+        # 3. PITCH (Y-axis rotation)
+        # --------------------
         sinp = 2.0 * (qw * qy - qz * qx)
         if abs(sinp) >= 1:
             pitch = math.copysign(math.pi / 2, sinp)
         else:
             pitch = math.asin(sinp)
 
+
         self.yaw = yaw
         self.pitch = pitch
 
-        return yaw, pitch        
+        return yaw, pitch

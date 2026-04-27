@@ -29,7 +29,7 @@ class TeleopNode(Node):
     # =====================
     # Handle incoming data
     # =====================
-    def handle_message(self, data):
+    def handle_message(self, data, control_id):
         # ---------------------------
         # Rotation
         # ---------------------------
@@ -49,7 +49,7 @@ class TeleopNode(Node):
             data["control"]["x"],
             data["control"]["y"]
         )
-
+        
         steering, throttle = self.control_processor.process(control)
 
         # ---------------------------

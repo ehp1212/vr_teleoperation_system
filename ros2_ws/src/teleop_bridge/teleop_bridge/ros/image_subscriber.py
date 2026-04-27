@@ -2,6 +2,10 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSReliabilityPolicy
+from rclpy.qos import QoSHistoryPolicy
+
 from teleop_bridge.utils.logger import logger
 import time
 
@@ -12,11 +16,17 @@ class ImageSubscriber(Node):
         self.track = track
         self.bridge = CvBridge()
 
+        qos = QoSProfile(
+                    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                    history=QoSHistoryPolicy.KEEP_LAST,
+                    depth=1
+                )
+
         self.subscription = self.create_subscription(
             Image,
             topic_name,
             self.callback,
-            10
+            qos
         )
 
         self.frame_id = 0
@@ -25,7 +35,7 @@ class ImageSubscriber(Node):
     def callback(self, msg):
         self.frame_id += 1
         ts = time.time()
-        logger.log("rgb_capture", self.frame_id, ts)
+        logger.log("capture", self.frame_id, ts, extra={"stream": "rgb"})
 
         try:
             # ROS2 Image → OpenCV (numpy)

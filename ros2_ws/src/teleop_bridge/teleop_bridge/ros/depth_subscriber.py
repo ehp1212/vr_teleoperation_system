@@ -27,7 +27,7 @@ class DepthSubscriber(Node):
     def callback(self, msg):
         self.frame_id += 1
         ts = time.time()
-        logger.log("depth_capture", self.frame_id, ts)
+        logger.log("capture", self.frame_id, ts, extra={"stream": "depth"})
 
         try:
             depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1")

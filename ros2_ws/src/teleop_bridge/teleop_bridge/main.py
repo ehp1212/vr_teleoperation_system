@@ -41,15 +41,11 @@ async def async_main():
     isaac_rgb_track = SimpleVideoTrack("rgb")
     issac_depth_track = DepthVideoTrack("depth")
 
-    hw_track = SimpleVideoTrack("HARDWARE")
-
     # =====================
     # ROS2 Node
     # =====================
     isaac_image_node = ImageSubscriber(isaac_rgb_track, "/camera/rgb/image_raw")
     isaac_depth_node = DepthSubscriber(issac_depth_track, "/camera/depth/image_raw")
-
-    # hw_node = ImageSubscriber(hw_track, "/hw/image")
 
     teleop_node = TeleopNode()
 
@@ -66,7 +62,7 @@ async def async_main():
     # =====================
     # WebRTC Client
     # =====================
-    client = WebRTCClient(teleop_node, isaac_rgb_track, issac_depth_track, hw_track)
+    client = WebRTCClient(teleop_node, isaac_rgb_track, issac_depth_track)
 
     # =====================
     # Execute (reconnect loop inside client)

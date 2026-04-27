@@ -27,41 +27,46 @@ class DepthVideoTrack(VideoStreamTrack):
         logger.log(f"{self.name}_track_update", frame_id, timestamp)
 
     async def recv(self):
-        pts, time_base = await self.next_timestamp()
 
-        frame_id = self.latest_frame_id
-        now = time.time()
+        try:
+            pts, time_base = await self.next_timestamp()
 
-        logger.log(f"{self.name}_recv_enter", frame_id, now)
+            frame_id = self.latest_frame_id
+            now = time.time()
 
-        # depth → image 
-        if self.latest_depth is None:
-            img = np.zeros((240, 320), dtype=np.uint8)
-            frame_id = -1
-        else:
-            depth = self.latest_depth
+            logger.log("recv_enter", frame_id, now, extra={"stream": "depth"})
 
-            max_depth = 5.0
-            depth_norm = np.clip(depth / max_depth, 0, 1)
+            # depth → image 
+            if self.latest_depth is None:
+                img = np.zeros((240, 320), dtype=np.uint8)
+                frame_id = -1
+            else:
+                depth = self.latest_depth
 
-            img = (depth_norm * 255).astype(np.uint8)
-            img = cv2.resize(img, (320, 240))
+                max_depth = 5.0
+                depth_norm = np.clip(depth / max_depth, 0, 1)
 
-        # metadata 
-        send_ts = time.time()
+                img = (depth_norm * 255).astype(np.uint8)
+                img = cv2.resize(img, (320, 240))
 
-        img = embed_metadata_gray_redundant(
-            img,
-            frame_id=frame_id,
-            timestamp=send_ts,
-            repeat=8
-        )
+            # metadata 
+            send_ts = time.time()
 
-        logger.log(f"{self.name}_send", frame_id, send_ts)
+            img = embed_metadata_gray_redundant(
+                img,
+                frame_id=frame_id,
+                timestamp=send_ts,
+                repeat=8
+            )
 
-        # VideoFrame 
-        frame = VideoFrame.from_ndarray(img, format="gray")
-        frame.pts = pts
-        frame.time_base = time_base
+            logger.log("recv_send", frame_id, send_ts, extra={"stream": "depth"})
 
-        return frame
+            # VideoFrame 
+            frame = VideoFrame.from_ndarray(img, format="gray")
+            frame.pts = pts
+            frame.time_base = time_base
+
+            return frame
+        except Exception as e:
+            print(f"RECV ERROR: ", e)
+            pass

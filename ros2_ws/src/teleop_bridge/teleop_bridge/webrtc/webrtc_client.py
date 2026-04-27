@@ -9,19 +9,19 @@ from .rotation_processor import RotationProcessor
 from .control_processor import ControlProcessor
 
 import time
+from teleop_bridge.utils.logger import logger
+
+
 def log(tag, *args):
     print(f"[{time.time():.3f}][{tag}]", *args)
 
 class WebRTCClient:
-    def __init__(self, teleop_node, isaac_image_track, isaac_depth_track,
-                  hw_image_track):
+    def __init__(self, teleop_node, isaac_image_track, isaac_depth_track):
         self.signaling_url = "ws://172.20.10.8:8765"
 
         self.teleop_node = teleop_node
         self.isaac_image_track = isaac_image_track
         self.isaac_depth_track = isaac_depth_track
-
-        self.hw_image_track = hw_image_track
 
         self.pc = None
         self.ws = None
@@ -103,8 +103,18 @@ class WebRTCClient:
 
         @control_channel.on("message")
         def on_message(message):
+            recv_ts = time.time()
             data = json.loads(message)
-            self.teleop_node.handle_message(data)
+            
+            control_id = data.get("control_id", -1)
+            logger.log(
+                "control_recv",
+                control_id,
+                recv_ts,
+                extra={"stream": "control"}
+            )
+
+            self.teleop_node.handle_message(data, control_id)
             
         @control_channel.on("close")
         def on_close():
@@ -113,8 +123,6 @@ class WebRTCClient:
         # Track 
         self.pc.addTrack(self.isaac_image_track)
         self.pc.addTrack(self.isaac_depth_track)
-
-        # self.pc.addTrack(self.hw_image_track)
 
         # =====================
         # WebSocket
