@@ -57,3 +57,5 @@
 # *.fbx
 # *.asset
 # *.unitypackage
+
+ros2_ws/ros_log.jsonl
