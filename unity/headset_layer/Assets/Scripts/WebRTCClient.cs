@@ -4,6 +4,7 @@ using System.Text;
 using NativeWebSocket;
 using Unity.WebRTC;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using Utils;
 
@@ -19,6 +20,7 @@ public class WebRTCClient : MonoBehaviour
     [SerializeField] private Transform _target;
     [SerializeField] private float _rotationDeadzone = 0.2f;
     private Quaternion _lastSentRotation = Quaternion.identity;
+    [SerializeField] private InputActionReference _rightThumbstickAction;
     
     [Header("Texture")]
     [SerializeField] private RawImage _rgbImage;
@@ -224,7 +226,6 @@ public class WebRTCClient : MonoBehaviour
 
                 videoStreamTrack.OnVideoReceived += texture =>
                 {
-                    Debug.Log("called");
                     if (slot == 0) // RGB
                     {
                         _rgbImage.texture = texture;
@@ -253,19 +254,25 @@ public class WebRTCClient : MonoBehaviour
     {
         if (_poseChannel == null || _poseChannel.ReadyState != RTCDataChannelState.Open)
             return;
+        
+        msg.type = "input";
+        var input = _rightThumbstickAction.action.ReadValue<Vector2>();
+        msg.control = new Vector2(input.x, input.y); 
 
         var currentRot = _target.rotation;
-
         var angleDiff = Quaternion.Angle(_lastSentRotation, currentRot);
-        if (angleDiff < _rotationDeadzone)
-            return;
-
-        msg.type = "input";
-        msg.rotation = new Vector4(currentRot.x, currentRot.y, currentRot.z, currentRot.w);
+        if (angleDiff > _rotationDeadzone)
+        {
+            msg.rotation = new Vector4(currentRot.x, currentRot.y, currentRot.z, currentRot.w);
+            _lastSentRotation = currentRot;
+        }
+        else
+        {
+            msg.rotation = new Vector4(_lastSentRotation.x, _lastSentRotation.y,
+                _lastSentRotation.z, _lastSentRotation.w);
+        }
 
         _poseChannel.Send(JsonUtility.ToJson(msg));
-    
-        _lastSentRotation = currentRot;
     }
 
     // ======================

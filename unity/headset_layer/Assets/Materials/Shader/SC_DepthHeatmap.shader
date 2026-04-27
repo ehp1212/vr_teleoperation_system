@@ -1,4 +1,4 @@
-Shader "URP/DepthHeatmap"
+Shader "URP/SC_DepthHeatmap"
 {
     Properties
     {
@@ -22,14 +22,12 @@ Shader "URP/DepthHeatmap"
             {
                 float4 positionOS   : POSITION;
                 float2 uv           : TEXCOORD0;
-                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct Varyings
             {
                 float4 positionCS   : SV_POSITION;
                 float2 uv           : TEXCOORD0;
-                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             TEXTURE2D(_BaseMap);
@@ -43,9 +41,6 @@ Shader "URP/DepthHeatmap"
             Varyings vert(Attributes input)
             {
                 Varyings output;
-                
-                UNITY_SETUP_INSTANCE_ID(input);
-                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
 
                 output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
                 output.uv = input.uv;
@@ -55,8 +50,6 @@ Shader "URP/DepthHeatmap"
 
             half4 frag(Varyings input) : SV_Target
             {
-                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-
                 float depth = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv).r;
                 depth *= 5.0; 
 
@@ -67,12 +60,12 @@ Shader "URP/DepthHeatmap"
 
                 half3 finalColor;
 
-                // 0m ~ 1m (r)
-                float t1 = saturate((depth - 0.0) / (1.0 - 0.0));
+                // 0m ~ 0.5m (r)
+                float t1 = saturate((depth - 0.0) / (0.2 - 0.0));
                 finalColor = lerp(colorZero, colorOne, t1);
 
                 // 1m ~ 3m (r -> b)
-                float t2 = saturate((depth - 1.0) / (3.0 - 1.0));
+                float t2 = saturate((depth - 0.2) / (3.0 - 0.2));
                 finalColor = lerp(finalColor, colorThree, t2);
 
                 // 3m ~ 5m (b -> g)
