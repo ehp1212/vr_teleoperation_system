@@ -1,20 +1,20 @@
 # # ==========================================
 # # 1. Unity (unity)
 # # ==========================================
-# /[Uu]nity/unity_humanoid/[Ll]ibrary/
-# /[Uu]nity/unity_humanoid/[Tt]emp/
-# /[Uu]nity/unity_humanoid/[Oo]bj/
-# /[Uu]nity/unity_humanoid/[Bb]uild/
-# /[Uu]nity/unity_humanoid/[Bb]uilds/
-# /[Uu]nity/unity_humanoid/[Ll]ogs/
-# /[Uu]nity/unity_humanoid/[Mm]emoryCaptures/
-# /[Uu]nity/unity_humanoid/UserSettings/
+/unity/headset_layer/[Ll]ibrary/
+/unity/headset_layer/[Tt]emp/
+/unity/headset_layer/[Oo]bj/
+/unity/headset_layer/[Bb]uild/
+/unity/headset_layer/[Bb]uilds/
+/unity/headset_layer/[Ll]ogs/
+/unity/headset_layer/[Mm]emoryCaptures/
+/unity/headset_layer/UserSettings/
+/unity/headset_layer/ProjectSettings/
 
-# # Unity 자동 생성 프로젝트 파일들
-# /[Uu]nity/*.csproj
-# /[Uu]nity/*.sln
-# /[Uu]nity/*.unityproj
-# /[Uu]nity/*.userprefs
+/unity/headset_layer/*.csproj
+/unity/headset_layer/*.sln
+/unity/headset_layer/*.unityproj
+/unity/headset_layer/*.userprefs
 
 # ==========================================
 # 2. Isaac Sim & Python (isaac)
@@ -57,3 +57,11 @@
 # *.fbx
 # *.asset
 # *.unitypackage
+
+unity/headset_layer/unity_log.jsonl
+
+unity/headset_layer/Assets/TextMesh Pro/
+
+unity/headset_layer/Assets/Samples/
+
+unity/headset_layer/Assets/Samples.meta
