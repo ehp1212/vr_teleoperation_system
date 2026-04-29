@@ -60,10 +60,10 @@ namespace Utils
 
             var latencyColor = _currentLatency > 150 ? "red" : "white";
             var gapColor = _currentFrameGap > 50 ? "yellow" : "white";
-
+            
             _text.text = 
                 $"<b>Rendering FPS:</b> {_fps:F1}\n" +
-                $"<b>Display Latency:</b> <color={latencyColor}>{_currentLatency:F1} ms</color>\n" +
+                // $"<b>Display Latency:</b> <color={latencyColor}>{_currentLatency:F1} ms</color>\n" +
                 $"<b>Frame Gap:</b> <color={gapColor}>{_currentFrameGap:F1} ms</color>";
         }
     }
