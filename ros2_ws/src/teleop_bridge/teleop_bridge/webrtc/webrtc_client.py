@@ -11,17 +11,12 @@ from .control_processor import ControlProcessor
 import time
 from teleop_bridge.utils.logger import logger
 
-
-def log(tag, *args):
-    print(f"[{time.time():.3f}][{tag}]", *args)
-
 class WebRTCClient:
-    def __init__(self, teleop_node, isaac_image_track, isaac_depth_track):
+    def __init__(self, teleop_node, tracks: dict):
         self.signaling_url = "ws://172.20.10.8:8765"
 
         self.teleop_node = teleop_node
-        self.isaac_image_track = isaac_image_track
-        self.isaac_depth_track = isaac_depth_track
+        self.tracks = tracks
 
         self.pc = None
         self.ws = None
@@ -82,7 +77,6 @@ class WebRTCClient:
         @self.pc.on("connectionstatechange")
         async def on_state_change():
             state = self.pc.connectionState
-            log("PC", self.pc.connectionState)
             
             if state == "connected":
                 self.connected = True                
@@ -120,9 +114,12 @@ class WebRTCClient:
         def on_close():
             print(f"[DATACHANNEL] Control - close")
 
-        # Track 
-        self.pc.addTrack(self.isaac_image_track)
-        self.pc.addTrack(self.isaac_depth_track)
+        # =====================
+        # Add Tracks
+        # =====================
+        for track_name, track in self.tracks.items():
+            print(f"[WebRTC] Adding track to PeerConnection: {track_name}")
+            self.pc.addTrack(track)
 
         # =====================
         # WebSocket
