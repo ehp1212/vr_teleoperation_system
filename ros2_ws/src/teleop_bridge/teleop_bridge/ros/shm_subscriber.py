@@ -12,11 +12,11 @@ from multiprocessing import shared_memory
 from teleop_bridge.utils.logger import logger
 
 class ShmImageSubscriber(Node):
-    def __init__(self, name, topic_name, shm_name, shape, mp_event):
+    def __init__(self, name, topic_name, shm_name, shape, perc_event):
         super().__init__(f"{name}_subscriber")
         self.name = name
         self.bridge = CvBridge()
-        self.mp_event = mp_event
+        self.perc_event = perc_event
         self.shape = shape
 
         # Conect to shared memory
@@ -54,31 +54,11 @@ class RgbVideoCallback(ShmImageSubscriber):
             # ROS2 -> OpenCV 
             img = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
 
-            # ------------------------------
-            # image processing for ROI
-            # ------------------------------
-            h, w = img.shape[:2]
-
-            # blur
-            blurred_img = cv2.GaussianBlur(img, (31, 31), 0)
-
-            # ROI region
-            roi_ratio = 0.8
-            roi_w, roi_h = int(w * roi_ratio), int(h * roi_ratio)
-            x1 = (w - roi_w) // 2
-            y1 = (h - roi_h) // 2
-            x2 = x1 + roi_w
-            y2 = y1 + roi_h
-
-            # combined filtered and roi 
-            blurred_img[y1:y2, x1:x2] = img[y1:y2, x1:x2]
-            img = blurred_img
-
             # Copy to memory
             self.shared_array[:] = img
 
             # Invoke event
-            self.mp_event.set()
+            self.perc_event.set()
 
         except Exception as e:
             print(f"[ROS2] {self.name} Error: {e}")
@@ -97,31 +77,12 @@ class DepthVideoCallback(ShmImageSubscriber):
             depth_norm = np.clip(depth / 5.0, 0, 1)
             img = (depth_norm * 255).astype(np.uint8)
             img = cv2.resize(img, (self.shape[1], self.shape[0])) # (width, height)
-            
-            # ------------------------------
-            # image processing for ROI
-            # ------------------------------
-            h, w = img.shape
-
-            # blur
-            blurred_img = cv2.GaussianBlur(img, (31, 31), 0)
-
-            # ROI region
-            roi_w, roi_h = int(w * 0.5), int(h * 0.5)
-            x1 = (w - roi_w) // 2
-            y1 = (h - roi_h) // 2
-            x2 = x1 + roi_w
-            y2 = y1 + roi_h
-
-            # combined filtered and roi 
-            blurred_img[y1:y2, x1:x2] = img[y1:y2, x1:x2]
-            img = blurred_img
 
             # update 
             self.shared_array[:] = img
 
             # Invoke event
-            self.mp_event.set()
+            self.perc_event.set()
 
         except Exception as e:
             print(f"[ROS2] {self.name} Error: {e}")

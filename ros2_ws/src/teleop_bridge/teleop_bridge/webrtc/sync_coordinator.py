@@ -27,7 +27,7 @@ class SyncCoordinator:
             # Read 
             self.webrtc_ready_event.set()
 
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0)
 
             self.webrtc_ready_event.clear()
             for e in self.worker_events.values():
