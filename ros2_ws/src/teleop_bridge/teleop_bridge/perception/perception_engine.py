@@ -1,4 +1,6 @@
 from multiprocessing import shared_memory
+from ultralytics import YOLO
+
 import numpy as np
 import cv2
 import time
@@ -43,6 +45,9 @@ class PerceptionFusionEngine:
         self._depth_output_img = np.ndarray(self._depth_shape, dtype=np.uint8, buffer=self._depth_output_shm.buf)
 
         # TODO: YOLO
+        print(f"[Perception] Loading YOLOv8n model...")
+        self.model = YOLO('yolov8n.pt')
+        print(f"[Perception] Model loaded successfully")
 
 
     def _process_fusion(self, rgb_img, depth_img):
@@ -55,6 +60,7 @@ class PerceptionFusionEngine:
         # 2. BBox 중앙값(Center X, Y) 계산
         # 3. depth_img에서 (Center X, Y) 위치의 거리값 추출
         # 4. 추출된 데이터를 딕셔너리(JSON) 형태로 조립하여 리턴
+        results = self.model(rgb_img, verbose=False)
 
         # --------------------
         # RGB ROI encoding 
@@ -78,7 +84,10 @@ class PerceptionFusionEngine:
         blurred_img[y1:y2, x1:x2] = rgb_img[y1:y2, x1:x2]
         rgb_img = blurred_img
 
-        self._rgb_output_img[:] = rgb_img
+        # test annotation
+        annotated_img = results[0].plot(img=rgb_img)
+
+        self._rgb_output_img[:] = annotated_img
         self._depth_output_img[:] = depth_img
 
     def run(self):

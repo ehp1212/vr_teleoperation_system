@@ -11,7 +11,11 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        "setuptools", 
+        "ultralytics>=8.0.0",
+        "opencv-python",
+        ],
     zip_safe=True,
     maintainer='eun',
     maintainer_email='eunhyeon1212p@gmail.com',
