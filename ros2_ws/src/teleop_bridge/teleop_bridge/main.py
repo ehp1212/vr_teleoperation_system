@@ -1,83 +1,102 @@
 import asyncio
-import rclpy
-import threading
-from rclpy.executors import MultiThreadedExecutor
+import numpy as np
+from multiprocessing import Process, shared_memory, Event
 
+from .webrtc.sync_coordinator import SyncCoordinator
+from .ros.shm_subscriber import ros_worker_process, RgbVideoCallback, DepthVideoCallback
+from .webrtc.shm_tracks import RgbVideoTrack, DepthVideoTrack
 from .webrtc.webrtc_client import WebRTCClient
-from .ros.image_subscriber import ImageSubscriber
-from .ros.depth_subscriber import DepthSubscriber
 from .ros.tele_op_node import TeleopNode
 
-from .webrtc.video_track import SimpleVideoTrack
-from .webrtc.depth_track import DepthVideoTrack
+STREAMS = {
+    "rgb": {
+        "topic": "/camera/rgb/image_raw",
+        "shape": (480, 640, 3),
+        "node_class": RgbVideoCallback,
+        "format": "bgr24"
+    },
+    "depth": {
+        "topic": "/camera/depth/image_raw",
+        "shape": (240, 320),  
+        "node_class": DepthVideoCallback,
+        "format": "gray"
+    },
+}
 
-from teleop_bridge.utils.logger import logger
-
-# =====================
-# ROS spin (thread)
-# =====================
-def ros_spin(nodes):
-    executor = MultiThreadedExecutor()
-
-    for node in nodes:
-        executor.add_node(node)
+async def async_main():
+    shm_blocks = []
+    processes = []
+    coordinator = SyncCoordinator()
+    tracks = {}
 
     try:
-        executor.spin()
+        # ===================================
+        # Child Process
+        # ===================================
+        for name, config in STREAMS.items():
+            shm_name = f"shm_{name}"
+            byte_size = int(np.prod(config["shape"]) * 1)
+
+            # create Shared Memory
+            shm = shared_memory.SharedMemory(create=True, name=shm_name, size=byte_size)
+            shm_blocks.append(shm)
+
+            # Event
+            mp_event = Event()
+            coordinator.add_worker_event(name, mp_event)
+
+            # Subprocess, ros2 worker
+            args = (name, config["topic"], shm_name, config["shape"], mp_event)
+            p = Process(target=ros_worker_process, args=(config["node_class"], args))
+            p.start()
+            processes.append(p)
+
+            # WebRTC track
+            if config["format"] == "bgr24":
+                tracks[name] = RgbVideoTrack(name=name, shm_name=shm_name, shape=config["shape"], coordinator=coordinator)
+            elif config["format"] == "gray":
+                tracks[name] = DepthVideoTrack(name=name, shm_name=shm_name, shape=config["shape"], coordinator=coordinator)
+
+        # ===================================
+        # Main Process
+        # ===================================
+        import rclpy
+        import threading
+        from rclpy.executors import MultiThreadedExecutor
+
+        rclpy.init()
+
+        teleop_node = TeleopNode()
+        executor = MultiThreadedExecutor()
+        executor.add_node(teleop_node)
+        
+        ros_thread = threading.Thread(
+            target=executor.spin,
+            daemon=True
+        )
+
+        ros_thread.start()
+        print("[System] TeleopNode")
+
+        # ===================================
+        # WebRTC loop
+        # ===================================
+        asyncio.create_task(coordinator.flush_loop())
+
+        # WebRTC Client
+        client = WebRTCClient(teleop_node, tracks)
+        print("[System] Waiting for WebRTC...")
+        await client.connect_loop()
+    
     finally:
-        for node in nodes:
-            node.destroy_node()
+        print("[System] Cleaninig resources...")
+        for p in processes:
+            p.terminate()
+            p.join()
+        
+        for shm in shm_blocks:
+            shm.close()
+            shm.unlink()
 
-
-# =====================
-# Async main
-# =====================
-async def async_main():
-    rclpy.init()
-
-    # =====================
-    # Track
-    # =====================
-    isaac_rgb_track = SimpleVideoTrack("rgb")
-    issac_depth_track = DepthVideoTrack("depth")
-
-    # =====================
-    # ROS2 Node
-    # =====================
-    isaac_image_node = ImageSubscriber(isaac_rgb_track, "/camera/rgb/image_raw")
-    isaac_depth_node = DepthSubscriber(issac_depth_track, "/camera/depth/image_raw")
-
-    teleop_node = TeleopNode()
-
-    # =====================
-    # ROS thread
-    # =====================
-    ros_thread = threading.Thread(
-        target=ros_spin,
-        args=([isaac_image_node, isaac_depth_node, teleop_node],),
-        daemon=True
-    )
-    ros_thread.start()
-
-    # =====================
-    # WebRTC Client
-    # =====================
-    client = WebRTCClient(teleop_node, isaac_rgb_track, issac_depth_track)
-
-    # =====================
-    # Execute (reconnect loop inside client)
-    # =====================
-    await client.connect_loop()
-
-
-# =====================
-# Entry point
-# =====================
 def main():
     asyncio.run(async_main())
-
-
-if __name__ == "__main__":
-    # logger.log("program_start")
-    main()
-    # logger.log("program_end")

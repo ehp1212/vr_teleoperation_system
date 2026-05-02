@@ -11,7 +11,6 @@ from multiprocessing import shared_memory
 
 from teleop_bridge.utils.logger import logger
 
-
 class ShmImageSubscriber(Node):
     def __init__(self, name, topic_name, shm_name, shape, mp_event):
         super().__init__(f"{name}_subscriber")
@@ -39,6 +38,11 @@ class ShmImageSubscriber(Node):
 
         self.frame_id = 0
 
+    def callback(self, msg):
+        raise NotImplementedError("callback meethod not implemented")
+
+        
+class RgbVideoCallback(ShmImageSubscriber):
     def callback(self, msg):
         try:
             self.frame_id += 1
@@ -79,34 +83,8 @@ class ShmImageSubscriber(Node):
         except Exception as e:
             print(f"[ROS2] {self.name} Error: {e}")
 
-class ShmDepthSubscriber(Node):
-    def __init__(self, name, topic_name, shm_name, shape, mp_event):
-        super().__init__(f"{name}_subscriber")
-        self.name = name
-        self.bridge = CvBridge()
-        self.mp_event = mp_event
-        self.shape = shape
-
-        # Conect to shared memory
-        self.shm = shared_memory.SharedMemory(name=shm_name)
-        self.shared_array = np.ndarray(self.shape, dtype=np.uint8, buffer=self.shm.buf)
-
-        qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1
-        )
-
-        self.subscription = self.create_subscription(
-            Image,
-            topic_name,
-            self.callback,
-            qos
-        )
-
-        self.frame_id = 0
-
-
+class DepthVideoCallback(ShmImageSubscriber):
+    
     def callback(self, msg):
         try:
             self.frame_id += 1
