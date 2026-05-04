@@ -57,6 +57,14 @@
     <limit lower="-3.14" upper="3.14" effort="1.0" velocity="1.0"/>
   </joint>
 
+  <link name="lidar_frame"/>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_frame"/>
+    <origin xyz="-0.076562 -0.000014 0.128658" rpy="0 0 0"/>
+  </joint>
+
   <link name="pitch_base"><visual><origin rpy="0 0 -1.5708"/><geometry><mesh filename="file:///home/eun/personal_project/humanoid_digital_twin/assets/robot_car/meshes/pitch_base.obj"/></geometry><material name="gray"/></visual></link>
   <joint name="pitch_joint" type="revolute"><parent link="yaw_base"/><child link="pitch_base"/><origin xyz="0 0 0.057646" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-1.57" upper="1.57" effort="1.0" velocity="1.0"/></joint>
 

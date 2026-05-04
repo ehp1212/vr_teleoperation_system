@@ -2,6 +2,7 @@ import time
 import math
 import json
 
+# TODO: Sementic categorisation for frontier 
 class SemanticMapManager:
     def __init__(self, distance_threshold=0.5):
         """

@@ -138,10 +138,10 @@ class PerceptionFusionEngine:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             
             print(f"[METADATA] Created: {obj_data}")
-
+ 
         # --------------------
         # 2. RGB ROI Encoding (Blurring background)
-        # --------------------
+        # --------------------   
         h, w = rgb_img.shape[:2]
 
         # Apply box filter for blurring

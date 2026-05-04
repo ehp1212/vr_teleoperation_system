@@ -7,7 +7,7 @@ from .ros.shm_subscriber import ros_worker_process, RgbVideoCallback, DepthVideo
 from .perception.perception_engine import perception_fusion_worker
 from .webrtc.shm_tracks import RgbVideoTrack, DepthVideoTrack
 from .webrtc.webrtc_client import WebRTCClient
-from .ros.tele_op_node import TeleopNode
+from .robot_state_orchestrator import RobotStateOrchestrator
 
 STREAMS = {
     "rgb": {
@@ -104,33 +104,18 @@ async def async_main():
                 tracks[name] = DepthVideoTrack(name=name, shm_name=shm_name, shape=config["shape"], coordinator=coordinator)
 
         # ===================================
-        # Main Process  
+        # ROS2 Process  
         # ===================================
-        import rclpy
-        import threading
-        from rclpy.executors import MultiThreadedExecutor
-
-        rclpy.init()
-
-        teleop_node = TeleopNode()
-        executor = MultiThreadedExecutor()
-        executor.add_node(teleop_node)
-        
-        ros_thread = threading.Thread(
-            target=executor.spin,
-            daemon=True
-        )
-
-        ros_thread.start()
-        print("[System] TeleopNode")
-
+        shared_map_manager = None
+        orchestrator = RobotStateOrchestrator(shared_map_manager)
+     
         # ===================================
         # WebRTC loop
         # ===================================
         asyncio.create_task(coordinator.flush_loop())
 
         # WebRTC Client
-        client = WebRTCClient(teleop_node, tracks)
+        client = WebRTCClient(orchestrator.teleop_node, tracks)
         print("[System] Waiting for WebRTC...")
         await client.connect_loop()
     
