@@ -2,9 +2,11 @@ import time
 import math
 import json
 
+from multiprocessing import Queue
+
 # TODO: Sementic categorisation for frontier 
 class SemanticMapManager:
-    def __init__(self, distance_threshold=0.5):
+    def __init__(self, queue: Queue, distance_threshold=0.5):
         """
         The Central Single Source of Truth for 3D Spatial Memory.
         ------------------------------
@@ -18,19 +20,37 @@ class SemanticMapManager:
 
         self.spatial_memory = {}
         self.next_obj_id = 0
-        
-        # Threshold (in meters) to consider a detection as an "existing" object
         self.distance_threshold = distance_threshold
+
+        self.source_queue = queue
+        
+    def inject_pose_source(self, shared_pose):
+        """
+        Injected by orchestrator
+        """
+        self.pose_source = shared_pose
 
     def update_with_raw_detections(self, raw_objects):
         """
         Writer: Called every time the Perception Engine sends new data via Queue.
         Performs Clustering / Data Association.
         """
+        if self.pose_source is None:
+            return
+            
+        robot_x, robot_y, robot_yaw = self.pose_source.get()
         current_time = time.time()
 
         for new_obj in raw_objects:
-            new_x, new_y = new_obj['global_xy']
+            # 가정: 퍼셉션 엔진이 주는 raw_objects는 로봇 기준 '상대적 거리(local_x, local_y)'라고 가정
+            # 만약 이미 global_xy를 준다면 이 계산은 퍼셉션 엔진 쪽으로 이동해야 합니다.
+            local_x = new_obj.get('local_x', 0.0) 
+            local_y = new_obj.get('local_y', 0.0)
+            
+            # [핵심] 로컬 좌표를 로봇의 현재 위치(x, y, yaw)를 이용해 글로벌 좌표로 변환
+            new_x = robot_x + (local_x * math.cos(robot_yaw) - local_y * math.sin(robot_yaw))
+            new_y = robot_y + (local_x * math.sin(robot_yaw) + local_y * math.cos(robot_yaw))
+            
             new_cls = new_obj['class']
             
             # Step 1: Find if this object already exists in memory
@@ -56,12 +76,14 @@ class SemanticMapManager:
                 self.spatial_memory[matched_id]['last_seen'] = current_time
             else:
                 # Insert new object
-                self.spatial_memory[self.next_obj_id] = {
+                new_obj_data = {
                     'class': new_cls,
                     'x': new_x,
                     'y': new_y,
                     'last_seen': current_time
                 }
+
+                self.spatial_memory[self.next_obj_id] = new_obj_data
                 self.next_obj_id += 1
 
     # ---------------------------------------------------------

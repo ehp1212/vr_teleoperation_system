@@ -1,6 +1,6 @@
 import asyncio
 import numpy as np
-from multiprocessing import Process, Queue, shared_memory, Event
+from multiprocessing import Manager, Process, Queue, shared_memory, Event
 
 from .webrtc.sync_coordinator import SyncCoordinator
 from .ros.shm_subscriber import ros_worker_process, RgbVideoCallback, DepthVideoCallback
@@ -8,17 +8,20 @@ from .perception.perception_engine import perception_fusion_worker
 from .webrtc.shm_tracks import RgbVideoTrack, DepthVideoTrack
 from .webrtc.webrtc_client import WebRTCClient
 from .robot_state_orchestrator import RobotStateOrchestrator
+from .semantic_map_manager import SemanticMapManager
 
 STREAMS = {
     "rgb": {
         "topic": "/camera/rgb/image_raw",
         "shape": (480, 640, 3),
+        "dtype": np.uint8,
         "node_class": RgbVideoCallback,
         "format": "bgr24"
     },
     "depth": {
         "topic": "/camera/depth/image_raw",
         "shape": (240, 320),  
+        "dtype": np.float32,
         "node_class": DepthVideoCallback,
         "format": "gray"
     },
@@ -43,7 +46,10 @@ async def async_main():
                 # Shared memory for images input and prcessing
                 # ------------------------------
                 shm_name = f"shm_{name}"
-                byte_size = int(np.prod(config["shape"]))
+                # byte_size = int(np.prod(config["shape"]))
+                dtype = np.dtype(config["dtype"])
+                shape = config["shape"]
+                byte_size = int(np.prod(shape) * dtype.itemsize)
 
                 # create Shared Memory
                 shm_raw = shared_memory.SharedMemory(create=True, name=shm_name, size=byte_size)
@@ -53,7 +59,15 @@ async def async_main():
                 img_recv_done_events[name] = Event()
 
                 # Subprocess, ros2 worker
-                args = (name, config["topic"], shm_name, config["shape"], img_recv_done_events[name])
+                args = (
+                    name,
+                    config["topic"],
+                    shm_name,
+                    config["shape"],
+                    config["dtype"],
+                    img_recv_done_events[name],
+                )
+
                 p = Process(target=ros_worker_process, args=(config["node_class"], args))
                 p.start()
                 processes.append(p)
@@ -69,11 +83,34 @@ async def async_main():
                 print(f"[SYSTEM] Failed to initialize callbacks, {e}")
 
 
+
+        # TODO: Perception and ROS2 State should have robot tf source
+        # ===================================
+        # Global components
+        # ===================================
+        manager = Manager()
+
+        # ROS2 Callback -> Perception
+        pose_shared_dict = manager.dict({
+            'stamp_sec': 0,
+            'stamp_nanosec': 0,
+            'frame_id': 'map',
+            'child_frame_id': 'camera_link',
+            'x': 0.0, 'y': 0.0, 'z': 0.0,
+            'qx': 0.0, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0
+        })
+
+        # Perception -> map manger
+        metadata_queue = Queue(maxsize=5)
+        sementic_map_manager = SemanticMapManager(metadata_queue)
+
+
+        # sementic_map_manager.inject_pose_source(robot_pose_channel)
+
         # ===================================
         # Perception sensor fusion
         # ===================================
         # TODO: modulise per stream
-        metadata_queue = Queue(maxsize=5)
         perception_done_event = Event()
 
         # check only perception fusion is done
@@ -82,11 +119,24 @@ async def async_main():
         p_perc = Process(
             target=perception_fusion_worker,
             args=(
-                "shm_rgb", "shm_depth",                                      # Data source
-                STREAMS["rgb"]["shape"], STREAMS["depth"]["shape"],
-                img_recv_done_events["rgb"], img_recv_done_events["depth"],  # Input waiting signal
-                perception_done_event, metadata_queue,                       # Output waiting signal and Output
-                "shm_rgb_webrtc", "shm_depth_webrtc"                         # Output shared memory name
+                "shm_rgb",
+                "shm_depth",
+
+                STREAMS["rgb"]["shape"],
+                STREAMS["depth"]["shape"],
+
+                STREAMS["rgb"]["dtype"],
+                STREAMS["depth"]["dtype"],
+
+                img_recv_done_events["rgb"],
+                img_recv_done_events["depth"],
+
+                perception_done_event,
+                pose_shared_dict,
+                metadata_queue,
+
+                "shm_rgb_webrtc",
+                "shm_depth_webrtc",
             )
         )
 
@@ -106,8 +156,7 @@ async def async_main():
         # ===================================
         # ROS2 Process  
         # ===================================
-        shared_map_manager = None
-        orchestrator = RobotStateOrchestrator(shared_map_manager)
+        orchestrator = RobotStateOrchestrator(sementic_map_manager, pose_shared_dict)
      
         # ===================================
         # WebRTC loop

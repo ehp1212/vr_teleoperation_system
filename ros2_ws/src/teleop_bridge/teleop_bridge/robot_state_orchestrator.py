@@ -4,6 +4,7 @@ from rclpy.executors import MultiThreadedExecutor
 from enum import Enum, auto
 
 from .ros.tele_op_node import TeleopNode
+from .ros.pose_receiver_node import PoseReceiverNode
 from .semantic_frontier_explorer import SemanticFrontierExplorer
 
 class RobotState(Enum):
@@ -15,23 +16,23 @@ class RobotStateOrchestrator:
     """
     Main manager for handling the robot's states and mode transitions.
     """
-    def __init__(self, semantic_map_manager):
-        # 1. State Definition
+    def __init__(self, semantic_map_manager, pose_shared_dict):
+        
         self.current_mode = RobotState.IDLE
         
-        # 2. Inject Memory & Reasoner
+        # Get an instance for robot pose
+        self._pose_shared_dict = pose_shared_dict
         self.map_manager = semantic_map_manager
-        
-        # 3. Initialize ROS 2 Frontier Node
-        # Passing the manager and reasoner for decoupled logic
         
         rclpy.init()
         self.teleop_node = TeleopNode()
+        self.pose_receiver_node = PoseReceiverNode(self._pose_shared_dict)
         self.frontier_node = SemanticFrontierExplorer(semantic_map_manager)
 
         self.executor = MultiThreadedExecutor()
 
         self.executor.add_node(self.teleop_node)
+        self.executor.add_node(self.pose_receiver_node)
         self.executor.add_node(self.frontier_node)
         
         self.ros_thread = threading.Thread(target=self._run_ros_executor, daemon=True)
@@ -47,6 +48,7 @@ class RobotStateOrchestrator:
         finally:
             self.executor.shutdown()
             self.teleop_node.destroy_node()
+            self.pose_receiver_node.destroy_node()
             self.frontier_node.destroy_node()
 
     def set_mode(self, new_mode: RobotState):

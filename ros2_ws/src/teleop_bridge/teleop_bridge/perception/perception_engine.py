@@ -4,40 +4,62 @@ from ultralytics import YOLO
 import numpy as np
 import cv2
 import time
+from scipy.spatial.transform import Rotation as R
 
 class PerceptionFusionEngine:
     def __init__(
-            self, shm_rgb_name, shm_depth_name, 
-            rgb_shape, depth_shape,
-            rgb_recv_done_event, depth_recv_done_event,
-            perception_done_event, metadata_queue,
-            shm_rgb_output_name, shm_depth_output_name
+            self,
+            shm_rgb_name,
+            shm_depth_name,
+            rgb_shape,
+            depth_shape,
+            rgb_dtype,
+            depth_dtype,
+            rgb_event,
+            depth_event,
+            perception_done_event,
+            pose_shared_dict,
+            metadata_queue,
+            shm_rgb_webrtc_name,
+            shm_depth_webrtc_name,
         ):
         
         # Initialisation
         # TODO: Perception logging
         self._shm_rgb_name = shm_rgb_name
         self._shm_depth_name = shm_depth_name
+        self._rgb_dtype = np.dtype(rgb_dtype)
+        self._depth_dtype = np.dtype(depth_dtype)
+
         self._rgb_shape = rgb_shape
         self._depth_shape = depth_shape
 
-        self._rgb_done_event = rgb_recv_done_event
-        self._depth_done_event = depth_recv_done_event
+        self._rgb_done_event = rgb_event
+        self._depth_done_event = depth_event
         self._perception_done_event = perception_done_event
         
+        self._pose_shared_dict = pose_shared_dict
         self._metadata_queue = metadata_queue
 
         # Conect to shared memory
         self._rgb_shm = shared_memory.SharedMemory(name=self._shm_rgb_name)
-        self._rgb_img = np.ndarray(self._rgb_shape, dtype=np.uint8, buffer=self._rgb_shm.buf)
+        self._rgb_img = np.ndarray(
+            self._rgb_shape,
+            dtype=self._rgb_dtype,
+            buffer=self._rgb_shm.buf
+        )
 
         self._depth_shm = shared_memory.SharedMemory(name=self._shm_depth_name)
-        self._depth_img = np.ndarray(self._depth_shape, dtype=np.uint8, buffer=self._depth_shm.buf)
+        self._depth_img = np.ndarray(
+            self._depth_shape,
+            dtype=self._depth_dtype,
+            buffer=self._depth_shm.buf
+        )
 
         # Connect to output shared memory
-        self._shm_rgb_output_name = shm_rgb_output_name
-        self._shm_depth_output_name = shm_depth_output_name
-
+        self._shm_rgb_output_name = shm_rgb_webrtc_name
+        self._shm_depth_output_name = shm_depth_webrtc_name
+        
         self._rgb_output_shm = shared_memory.SharedMemory(name=self._shm_rgb_output_name)
         self._rgb_output_img = np.ndarray(self._rgb_shape, dtype=np.uint8, buffer=self._rgb_output_shm.buf)
 
@@ -85,169 +107,194 @@ class PerceptionFusionEngine:
     # INTERNAL
     # ==============================
     def _process_fusion(self, rgb_img, depth_img):
+        try:
+            # --------------------
+            # 0. Get Camera World Pose 
+            # --------------------
+            cam_pose = dict(self._pose_shared_dict)
 
-        # --------------------
-        # 1. Perception
-        # --------------------
-        results = self.model(rgb_img, verbose=False)
+            # --------------------
+            # 1. Perception
+            # --------------------
+            results = self.model(rgb_img, verbose=False)
 
-        h, w = rgb_img.shape[:2]
-        fx, fy, cx, cy = self._get_pixel_intrinsics(image_width=w, image_height=h)
+            h, w = rgb_img.shape[:2]
+            depth_h, depth_w = depth_img.shape[:2]
+            sx = depth_w / w
+            sy = depth_h / h
 
-        frame_metadata = []
+            fx, fy, cx, cy = self._get_pixel_intrinsics(image_width=w, image_height=h)
 
-        for box in results[0].boxes:
-            # Extract original BBox coordinates
-            x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
-            conf = float(box.conf[0].cpu().numpy())
-            cls_name = self.model.names[int(box.cls[0].cpu().numpy())]
+            frame_metadata = []
 
-            if conf < 0.5:
-                continue
-
-            # 1. Get Depth (Option B)
-            z_target = self._get_roi_depth(x1, y1, x2, y2, depth_img)
-
-            if z_target == 0:
-                continue
+            for box in results[0].boxes:
+                # Extract original BBox coordinates
+                x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
+                conf = float(box.conf[0].cpu().numpy())
+                cls_name = self.model.names[int(box.cls[0].cpu().numpy())]
                 
-            # 2. Calculate the center pixel (u, v) of the bounding box
-            u_center = (x1 + x2) / 2.0
-            v_center = (y1 + y2) / 2.0
+                if conf < 0.5:
+                    continue
 
-            # 3. Project to 3D Space!
-            X_3d, Y_3d, Z_3d = self._project_pixel_to_3d(
-                u_center, v_center, z_target, fx, fy, cx, cy
-            )
+                dx1 = int(x1 * sx)
+                dy1 = int(y1 * sy)
+                dx2 = int(x2 * sx)
+                dy2 = int(y2 * sy)
 
-            # 4. Assemble the metadata dictionary
-            obj_data = {
-                "class": cls_name,
-                "confidence": round(conf, 2),
-                "position_3d_xyz": [round(X_3d, 2), round(Y_3d, 2), round(Z_3d, 2)]
-            }
+                # --------------------
+                # 1. Get Depth 
+                # --------------------
+                # z_target_meters = self._get_roi_depth(dx1, dy1, dx2, dy2, depth_img)
 
-            frame_metadata.append(obj_data)
+                # --------------------
+                # 2. Calculate the center pixel (u, v) of the bounding box
+                # --------------------
+                u_center = (x1 + x2) / 2.0  # 검출된 박스의 가로 중앙
+                v_center = (y1 + y2) / 2.0  # 검출된 박스의 세로 중앙
 
-            # [Debug] Draw Green Box
-            cv2.rectangle(rgb_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                target_u = int(u_center * sx)
+                target_v = int(v_center * sy)
+
+                # 안전 장치 (이미지 경계값 제한)
+                target_u = max(0, min(target_u, depth_w - 1))
+                target_v = max(0, min(target_v, depth_h - 1))
+
+                z_target_meters = depth_img[target_v, target_u]
+
+                # --------------------
+                # 3. Project to 3D Space
+                # --------------------
+                X_opt, Y_opt, Z_opt = self._project_pixel_to_3d_optical(
+                        u_center, v_center, z_target_meters, fx, fy, cx, cy
+                    )
+
+                # --------------------
+                # 4. Optical Frame -> World(Map) Frame
+                # --------------------
+                local_point = np.array([Z_opt, -X_opt, -Y_opt])
+
+                cam_rotation = R.from_quat([
+                    cam_pose.get('qx', 0.0), cam_pose.get('qy', 0.0), 
+                    cam_pose.get('qz', 0.0), cam_pose.get('qw', 1.0)
+                ])
+                cam_translation = np.array([
+                    cam_pose.get('x', 0.0), cam_pose.get('y', 0.0), cam_pose.get('z', 0.0)
+                ])
+
+                # Calculate world position
+                world_point = cam_rotation.apply(local_point) + cam_translation
+                X_world, Y_world, Z_world = world_point[0], world_point[1], world_point[2]
+
+                # --------------------
+                # 5. Metadata
+                # --------------------
+                obj_data = {
+                    "class": cls_name,
+                    "confidence": round(conf, 2),
+                    "x": round(float(X_world), 3),
+                    "y": round(float(Y_world), 3),
+                    "z": round(float(Z_world), 3),
+                    "last_seen": time.time()
+                }
+
+                print(obj_data)
+
+                frame_metadata.append(obj_data)
+
+                # [Debug] Draw Green Box
+                cv2.rectangle(rgb_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                
+                # [Debug] Print 3D coordinates on screen!
+                text_3d = f"[{obj_data['x']:.1f}, {obj_data['y']:.1f}, {obj_data['z']:.1f}]"
+                cv2.putText(rgb_img, text_3d, (x1, y1 - 10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             
-            # [Debug] Print 3D coordinates on screen!
-            text_3d = f"[{X_3d:.1f}, {Y_3d:.1f}, {Z_3d:.1f}]"
-            cv2.putText(rgb_img, text_3d, (x1, y1 - 10), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            if frame_metadata:
+                try:
+                    # 큐가 가득 차지 않았다면 전송 (블로킹 방지)
+                    self._metadata_queue.put_nowait(frame_metadata)
+                except Exception as e:
+                    pass # Queue Full 시 가장 오래된/현재 프레임 버림 처리 (선택적 구현)
             
-            print(f"[METADATA] Created: {obj_data}")
- 
-        # --------------------
-        # 2. RGB ROI Encoding (Blurring background)
-        # --------------------   
-        h, w = rgb_img.shape[:2]
+            # --------------------
+            # 2. RGB ROI Encoding (Blurring background)
+            # --------------------   
+            h, w = rgb_img.shape[:2]
 
-        # Apply box filter for blurring
-        blurred_img = cv2.boxFilter(rgb_img, -1, (31, 31))
+            # Apply box filter for blurring
+            blurred_img = cv2.boxFilter(rgb_img, -1, (31, 31))
 
-        # Define clear ROI region (center 80%)
-        roi_ratio = 0.8
-        roi_w, roi_h = int(w * roi_ratio), int(h * roi_ratio)
-        roi_x1 = (w - roi_w) // 2
-        roi_y1 = (h - roi_h) // 2
-        roi_x2 = roi_x1 + roi_w
-        roi_y2 = roi_y1 + roi_h
+            # Define clear ROI region (center 80%)
+            roi_ratio = 0.8
+            roi_w, roi_h = int(w * roi_ratio), int(h * roi_ratio)
+            roi_x1 = (w - roi_w) // 2
+            roi_y1 = (h - roi_h) // 2
+            roi_x2 = roi_x1 + roi_w
+            roi_y2 = roi_y1 + roi_h
 
-        # Restore original sharp image inside the center ROI
-        blurred_img[roi_y1:roi_y2, roi_x1:roi_x2] = rgb_img[roi_y1:roi_y2, roi_x1:roi_x2]
+            # Restore original sharp image inside the center ROI
+            blurred_img[roi_y1:roi_y2, roi_x1:roi_x2] = rgb_img[roi_y1:roi_y2, roi_x1:roi_x2]
 
-        # Overwrite output shared memory
-        self._rgb_output_img[:] = blurred_img
-        self._depth_output_img[:] = depth_img
+            # Overwrite output shared memory
+            self._rgb_output_img[:] = blurred_img
+            self._depth_output_img[:] = self.depth_to_uint8_gray(depth_img)
+        except Exception as e:
+            print(e)
 
     # ==============================
     # DETECTION
     # ==============================
     def _get_roi_depth(self, x1, y1, x2, y2, depth_img):
-        """
-        Extract median depth from the central 50% ROI of the bounding box.
-        """
-        # Crop depth image to BBox size
-        bbox_depth = depth_img[y1:y2, x1:x2]
-        h, w = bbox_depth.shape
+        depth_h, depth_w = depth_img.shape[:2]
 
-        # Prevent out-of-bounds error
+        x1 = max(0, min(int(x1), depth_w - 1))
+        x2 = max(0, min(int(x2), depth_w))
+        y1 = max(0, min(int(y1), depth_h - 1))
+        y2 = max(0, min(int(y2), depth_h))
+
+        if x2 <= x1 or y2 <= y1:
+            return 0.0
+
+        bbox_depth = depth_img[y1:y2, x1:x2]
+        h, w = bbox_depth.shape[:2]
+
         if h == 0 or w == 0:
-            return 0
+            return 0.0
 
-        # Define inner 50% ROI
+        min_valid_depth = 0.3
+        max_valid_depth = 5.5
+
+        def valid_median(region):
+            vals = region[np.isfinite(region)]
+            vals = vals[(vals >= min_valid_depth) & (vals <= max_valid_depth)]
+            if vals.size == 0:
+                return 0.0
+            return float(np.median(vals))
+
+        # 1. 중앙 50%
         roi_ratio = 0.5
-        roi_x1 = int(w * (1 - roi_ratio) / 2)
-        roi_x2 = int(w * (1 + roi_ratio) / 2)
-        roi_y1 = int(h * (1 - roi_ratio) / 2)
-        roi_y2 = int(h * (1 + roi_ratio) / 2)
+        roi_x1 = int(w * (1.0 - roi_ratio) / 2.0)
+        roi_x2 = int(w * (1.0 + roi_ratio) / 2.0)
+        roi_y1 = int(h * (1.0 - roi_ratio) / 2.0)
+        roi_y2 = int(h * (1.0 + roi_ratio) / 2.0)
 
         inner_roi = bbox_depth[roi_y1:roi_y2, roi_x1:roi_x2]
+        z = valid_median(inner_roi)
+        if z > 0.0:
+            return z
 
-        # Filter valid depth pixels (> 0)
-        valid_depths = inner_roi[inner_roi > 0]
+        # 2. 전체 bbox fallback
+        z = valid_median(bbox_depth)
+        if z > 0.0:
+            return z
 
-        if len(valid_depths) == 0:
-            return 0
+        # 3. 마지막 디버그용 fallback: 0.0보다 큰 값이라도 반환
+        vals = bbox_depth[np.isfinite(bbox_depth)]
+        vals = vals[vals > 0.0]
+        if vals.size == 0:
+            return 0.0
 
-        # Calculate median depth
-        z_target = float(np.median(valid_depths))
-
-        # [TEMPORARILY DISABLED] Max Range Exception
-        # We need to check what unit z_target is in the console first!
-        # if z_target > 4.5:
-        #     return 0
-
-        return z_target
-
-    def _refine_bbox_with_depth(self, x1, y1, x2, y2, depth_img):
-        """
-        Refine Bbox with depth textures
-        """
-        # get depths
-        bbox_depth = depth_img[y1:y2, x1:x2]
-
-        h, w = bbox_depth.shape
-        roi_region = 0.5 
-        roi_x1, roi_x2 = int(w * (roi_region / 2)), int(w * (roi_region / 2 + roi_region)) 
-        roi_y1, roi_y2 = int(h * (roi_region / 2)), int(h * (roi_region / 2 + roi_region)) 
-        inner_roi = bbox_depth[roi_y1:roi_y2, roi_x1:roi_x2]
-
-        # get distance from roi
-        valid_depths = inner_roi[inner_roi > 0]
-
-        # return original if no depth data
-        if len(valid_depths) == 0:
-            return x1, y1, x2, y2, 0
-        
-        z_target = np.median(valid_depths)
-        # if z_target > 5:
-        #     return x1, y1, x2, y2, 0
-        
-        # masking
-        margin = 50
-        mask = cv2.inRange(bbox_depth, z_target - margin, z_target + margin)
-
-        kernel = np.ones((5,5), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel) 
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        
-        # get new bbox
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return x1, y1, x2, y2, z_target
-            
-        largest_contour = max(contours, key=cv2.contourArea)
-        rx, ry, rw, rh = cv2.boundingRect(largest_contour)
-        
-        new_x1 = x1 + rx
-        new_y1 = y1 + ry
-        new_x2 = new_x1 + rw
-        new_y2 = new_y1 + rh
-        
-        return new_x1, new_y1, new_x2, new_y2, z_target
+        return float(np.median(vals))
 
     # ==============================
     # PROJECTION TO 3D
@@ -271,23 +318,32 @@ class PerceptionFusionEngine:
 
             return fx, fy, cx, cy
 
-    def _project_pixel_to_3d(self, u, v, z_depth, fx, fy, cx, cy):
+    def _project_pixel_to_3d_optical(self, u, v, z_depth, fx, fy, cx, cy):
+        X_opt = (u - cx) * z_depth / fx
+        Y_opt = (v - cy) * z_depth / fy
+        Z_opt = z_depth
+        return X_opt, Y_opt, Z_opt
+    
+    def depth_to_uint8_gray(self, depth, min_depth=0.2, max_depth=10.0):
         """
-        Project a 2D pixel coordinate (u, v) and depth (Z) into a 3D coordinate (X, Y, Z)
-        using the Pinhole Camera Model.
+        depth: float32 depth image in meters, shape (H, W)
+        return: uint8 grayscale image, shape (H, W)
         """
-        # Pinhole projection formula
-        X = (u - cx) * z_depth / fx
-        Y = (v - cy) * z_depth / fy
-        Z = z_depth
+        depth = np.asarray(depth, dtype=np.float32)
 
-        return X, Y, Z
+        valid = np.isfinite(depth)
+        clipped = np.clip(depth, min_depth, max_depth)
+
+        normalized = (clipped - min_depth) / (max_depth - min_depth)
+        gray = (normalized * 255.0).astype(np.uint8)
+
+        gray[~valid] = 0
+        return gray
 
 
 def perception_fusion_worker(*args):
 
     engine = PerceptionFusionEngine(*args)
-
     try:
         engine.run()
     except Exception as e:
