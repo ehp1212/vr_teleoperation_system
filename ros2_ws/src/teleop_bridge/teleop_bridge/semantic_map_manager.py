@@ -23,35 +23,28 @@ class SemanticMapManager:
         self.distance_threshold = distance_threshold
 
         self.source_queue = queue
-        
-    def inject_pose_source(self, shared_pose):
+
+        self.on_new_object_callback = None
+
+    def set_new_object_callback(self, callback):
         """
-        Injected by orchestrator
+        Setter method to attach WebRTC send function
         """
-        self.pose_source = shared_pose
+        self.on_new_object_callback = callback
 
     def update_with_raw_detections(self, raw_objects):
         """
         Writer: Called every time the Perception Engine sends new data via Queue.
-        Performs Clustering / Data Association.
+        Performs Clustering / Data Association using pre-calculated global coordinates.
         """
-        if self.pose_source is None:
-            return
-            
-        robot_x, robot_y, robot_yaw = self.pose_source.get()
         current_time = time.time()
 
         for new_obj in raw_objects:
-            # 가정: 퍼셉션 엔진이 주는 raw_objects는 로봇 기준 '상대적 거리(local_x, local_y)'라고 가정
-            # 만약 이미 global_xy를 준다면 이 계산은 퍼셉션 엔진 쪽으로 이동해야 합니다.
-            local_x = new_obj.get('local_x', 0.0) 
-            local_y = new_obj.get('local_y', 0.0)
-            
-            # [핵심] 로컬 좌표를 로봇의 현재 위치(x, y, yaw)를 이용해 글로벌 좌표로 변환
-            new_x = robot_x + (local_x * math.cos(robot_yaw) - local_y * math.sin(robot_yaw))
-            new_y = robot_y + (local_x * math.sin(robot_yaw) + local_y * math.cos(robot_yaw))
-            
-            new_cls = new_obj['class']
+            # 1. Extract the already-converted global coordinates from perception metadata
+            new_x = new_obj.get('x', 0.0)
+            new_y = new_obj.get('y', 0.0)
+            new_z = new_obj.get('z', 0.0)
+            new_cls = new_obj.get('class', 'unknown')
             
             # Step 1: Find if this object already exists in memory
             matched_id = None
@@ -59,7 +52,7 @@ class SemanticMapManager:
 
             for obj_id, existing_obj in self.spatial_memory.items():
                 if existing_obj['class'] == new_cls:
-                    # Calculate Euclidean distance
+                    # Calculate 2D Euclidean distance (can be changed to 3D if needed)
                     dist = math.hypot(existing_obj['x'] - new_x, existing_obj['y'] - new_y)
                     if dist < self.distance_threshold and dist < min_dist:
                         min_dist = dist
@@ -67,12 +60,12 @@ class SemanticMapManager:
 
             # Step 2: Update or Insert
             if matched_id is not None:
-                # Update existing object (Simple Moving Average for smoothing)
-                old_x = self.spatial_memory[matched_id]['x']
-                old_y = self.spatial_memory[matched_id]['y']
+                # Update existing object (Smoothing with moving average to reduce jitter)
+                alpha = 0.7  # 70% old value, 30% new value
                 
-                self.spatial_memory[matched_id]['x'] = (old_x + new_x) / 2.0
-                self.spatial_memory[matched_id]['y'] = (old_y + new_y) / 2.0
+                self.spatial_memory[matched_id]['x'] = self.spatial_memory[matched_id]['x'] * alpha + new_x * (1 - alpha)
+                self.spatial_memory[matched_id]['y'] = self.spatial_memory[matched_id]['y'] * alpha + new_y * (1 - alpha)
+                self.spatial_memory[matched_id]['z'] = self.spatial_memory[matched_id].get('z', 0.0) * alpha + new_z * (1 - alpha)
                 self.spatial_memory[matched_id]['last_seen'] = current_time
             else:
                 # Insert new object
@@ -80,11 +73,14 @@ class SemanticMapManager:
                     'class': new_cls,
                     'x': new_x,
                     'y': new_y,
+                    'z': new_z,
                     'last_seen': current_time
                 }
-
                 self.spatial_memory[self.next_obj_id] = new_obj_data
                 self.next_obj_id += 1
+
+                # send data to channel
+                self.on_new_object_callback(new_obj_data)
 
     # ---------------------------------------------------------
     # Readers (Getters for other systems)
@@ -121,3 +117,18 @@ class SemanticMapManager:
             "total_objects_found": len(self.spatial_memory),
             "features": features
         }
+    
+def map_manager_worker(manager: SemanticMapManager):
+    print("[MapManager] Worker thread started.")
+    while True:
+        try:
+            raw_detections = manager.source_queue.get()
+            
+            if raw_detections is None:
+                break
+                
+            # 맵 업데이트 실행
+            manager.update_with_raw_detections(raw_detections)
+            
+        except Exception as e:
+            print(f"[MapManager] Error: {e}")

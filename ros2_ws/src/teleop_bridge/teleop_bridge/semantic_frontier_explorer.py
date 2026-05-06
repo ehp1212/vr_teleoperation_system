@@ -77,6 +77,8 @@ class SemanticFrontierExplorer(Node):
         if not frontiers:
             return None
 
+        print("called")
+        return
         # 현재 맵에 있는 객체들 가져오기
         known_objects = self.map_manager.get_clean_map()
         

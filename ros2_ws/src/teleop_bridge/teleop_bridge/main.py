@@ -1,4 +1,6 @@
 import asyncio
+import threading
+
 import numpy as np
 from multiprocessing import Manager, Process, Queue, shared_memory, Event
 
@@ -8,7 +10,7 @@ from .perception.perception_engine import perception_fusion_worker
 from .webrtc.shm_tracks import RgbVideoTrack, DepthVideoTrack
 from .webrtc.webrtc_client import WebRTCClient
 from .robot_state_orchestrator import RobotStateOrchestrator
-from .semantic_map_manager import SemanticMapManager
+from .semantic_map_manager import SemanticMapManager, map_manager_worker
 
 STREAMS = {
     "rgb": {
@@ -90,6 +92,13 @@ async def async_main():
         # ===================================
         manager = Manager()
 
+        # Perception -> map manger
+        metadata_queue = Queue(maxsize=5)
+        sementic_map_manager = SemanticMapManager(metadata_queue, 0.2)
+
+        map_thread = threading.Thread(target=map_manager_worker, args=(sementic_map_manager,), daemon=True)
+        map_thread.start()
+
         # ROS2 Callback -> Perception
         pose_shared_dict = manager.dict({
             'stamp_sec': 0,
@@ -99,13 +108,6 @@ async def async_main():
             'x': 0.0, 'y': 0.0, 'z': 0.0,
             'qx': 0.0, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0
         })
-
-        # Perception -> map manger
-        metadata_queue = Queue(maxsize=5)
-        sementic_map_manager = SemanticMapManager(metadata_queue)
-
-
-        # sementic_map_manager.inject_pose_source(robot_pose_channel)
 
         # ===================================
         # Perception sensor fusion
@@ -166,6 +168,8 @@ async def async_main():
         # WebRTC Client
         client = WebRTCClient(orchestrator.teleop_node, tracks)
         print("[System] Waiting for WebRTC...")
+
+        sementic_map_manager.set_new_object_callback(callback=client.on_add_new_object)
         await client.connect_loop()
     
     finally:

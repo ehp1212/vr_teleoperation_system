@@ -26,6 +26,9 @@ class WebRTCClient:
 
         self.connected = False
 
+        self._map_channel = None
+        self.loop = asyncio.get_event_loop()
+
         print(f"WebRTC client initialized: {self.signaling_url}")
 
     # =====================
@@ -84,7 +87,9 @@ class WebRTCClient:
             if self.pc.connectionState in ["failed", "closed"]:
                 self.connected = False
 
-        # control channel (unity -> ros2)
+        # =====================
+        # Control channel (unity -> ros2)
+        # =====================
         control_channel = self.pc.createDataChannel(
             "control",
             ordered=False,
@@ -94,6 +99,10 @@ class WebRTCClient:
         @control_channel.on("open")
         def on_open():
             print(f"[DATACHANNEL] Control - open")
+            
+        @control_channel.on("close")
+        def on_close():
+            print(f"[DATACHANNEL] Control - close")
 
         @control_channel.on("message")
         def on_message(message):
@@ -109,10 +118,15 @@ class WebRTCClient:
             )
 
             self.teleop_node.handle_message(data, control_id)
-            
-        @control_channel.on("close")
-        def on_close():
-            print(f"[DATACHANNEL] Control - close")
+
+        # =====================
+        # Map Data Channel
+        # =====================
+        self._map_channel = self.pc.createDataChannel(
+            "map",
+            ordered=False,
+            maxRetransmits=0
+        )
 
         # =====================
         # Add Tracks
@@ -217,3 +231,26 @@ class WebRTCClient:
         self.ws = None
         if self.pc:
             await self.pc.close()
+
+    def on_add_new_object(self, new_obj_data):
+        """
+        Callback function triggered by SemanticMapManager.
+        Sends new object metadata to Unity via WebRTC DataChannel.
+        """
+        print(f"ON TRACK: {new_obj_data}")
+        self.loop.call_soon_threadsafe(self._send_via_channel, new_obj_data)
+
+    def _send_via_channel(self, data):
+        """
+        The actual send operation executed in the Main Loop.
+        """
+        if self._map_channel and self._map_channel.readyState == "open":
+            try:
+                payload = json.dumps({
+                    "type": "MAP_ITEM_ADDED",
+                    "data": data
+                })
+                self._map_channel.send(payload)
+                print(f"[WebRTC] Successfully sent: {data['class']}")
+            except Exception as e:
+                print(f"[WebRTC] Send error: {e}")

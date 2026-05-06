@@ -197,7 +197,7 @@ class PerceptionFusionEngine:
                     "last_seen": time.time()
                 }
 
-                print(obj_data)
+                # print(obj_data)
 
                 frame_metadata.append(obj_data)
 
