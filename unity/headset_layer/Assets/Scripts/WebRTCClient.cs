@@ -5,6 +5,7 @@ using System.Text;
 using NativeWebSocket;
 using Unity.WebRTC;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using Utils;
@@ -25,6 +26,10 @@ public class WebRTCClient : MonoBehaviour
     [SerializeField] private InputActionReference _rightThumbstickAction;
     
     [Header("Texture")]
+    [SerializeField] private RenderTexture _webRtcRenderTexture;
+    [SerializeField] private RenderTexture _uiOverlayTexture;
+    [SerializeField] private Material _outcomeMat;
+    
     [SerializeField] private RawImage _rgbImage;
     [SerializeField] private RawImage _depthImage;
     
@@ -50,6 +55,12 @@ public class WebRTCClient : MonoBehaviour
     private double _trueFrameGapMs = 0;
     private long _lastPythonTs = 0;
     public Dictionary<string, long> _lastPythonTsDict = new Dictionary<string, long>();
+    private RTCDataChannel _mapChannel;
+
+    private MeshRenderer _curvedMeshRenderer;
+    private Texture _webRtcTexture;
+
+    public UnityEvent<MapUpdateMessage> MapUpdateEvent;
     
     public Logger Logger => _logger;
     
@@ -93,9 +104,14 @@ public class WebRTCClient : MonoBehaviour
 
     private void Update()
     {
+        if (_webRtcTexture != null && _webRtcRenderTexture != null)
+        {
+            Graphics.Blit(_webRtcTexture, _webRtcRenderTexture);
+        }
+        
         _ws.DispatchMessageQueue();
         var now = Time.realtimeSinceStartupAsDouble;
-
+        
         if (_rgbImage.texture != null)
         {
             if (_telemetryUI != null)
@@ -215,6 +231,9 @@ public class WebRTCClient : MonoBehaviour
 
             if (channel.Label == "control")
                 SetupPoseChannel(channel);
+
+            if (channel.Label == "map")
+                SetupMapChannel(channel);
         };
 
         _pc.OnIceCandidate = candidate =>
@@ -233,8 +252,6 @@ public class WebRTCClient : MonoBehaviour
 
         _pc.OnTrack = e =>
         {
-            Debug.Log("[PC] Track: " + e);
-
             if (e.Track is VideoStreamTrack videoStreamTrack)
             {
                 var slot = _trackCount;
@@ -242,12 +259,26 @@ public class WebRTCClient : MonoBehaviour
 
                 videoStreamTrack.OnVideoReceived += texture =>
                 {
+                    Debug.Log("Video track added.");
                     if (slot == 0) // RGB
                     {
+                        Debug.Log("[PC] Track: RGB Added. ");
+                        
+                        // _rgbmat.SetTexture("_BaseMap", texture);
+
+                        _webRtcTexture = texture;
+                        
+                        // 1. 영상 텍스처를 매터리얼의 _MainTex에 직접 꽂습니다. (Blit 연산 0)
+                        _outcomeMat.SetTexture("_MainTex", _webRtcTexture);
+
+                        // 2. 외부에서 만든 UI 렌더텍스처를 _OverlayTex에 꽂습니다.
+                        _outcomeMat.SetTexture("_OverlayTex", _uiOverlayTexture);
+                        
                         _rgbImage.texture = texture;
                     }
                     else if (slot == 1) // Depth
                     {
+                        Debug.Log("[PC] Track: Depth Added. ");
                         _depthImage.texture = texture;
                     }
                 };
@@ -260,12 +291,37 @@ public class WebRTCClient : MonoBehaviour
     // ======================
     // Pose
     // ======================
+
     private void SetupPoseChannel(RTCDataChannel channel)
     {
         _poseChannel = channel;
 
         channel.OnOpen = () => Debug.Log("[Pose] Open");
         channel.OnClose = () => Debug.Log("[Pose] Close");
+    }
+
+    // ======================
+    // Map
+    // ======================
+    private void SetupMapChannel(RTCDataChannel channel)
+    {
+        _mapChannel = channel;
+        channel.OnOpen = () => Debug.Log("[Map] Open");
+        channel.OnClose = () => Debug.Log("[Map] Close");
+        channel.OnMessage = bytes =>
+        {
+            var message = Encoding.UTF8.GetString(bytes);
+            var data = JsonUtility.FromJson<MapUpdateMessage>(message);
+            if (data != null)
+            {
+                switch (data.type)
+                {
+                    case "MAP_ITEM_ADDED":
+                        MapUpdateEvent?.Invoke(data);
+                        break;
+                }
+            }
+        };
     }
 
     private void SendPose()
@@ -292,10 +348,6 @@ public class WebRTCClient : MonoBehaviour
 
         _poseChannel.Send(JsonUtility.ToJson(msg));
     }
-
-    // ======================
-    // Depth Channel
-    // ======================
 
     private void SendJson(object obj)
     {

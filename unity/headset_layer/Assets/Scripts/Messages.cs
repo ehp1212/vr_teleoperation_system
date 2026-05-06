@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 
 public class PoseMessage
 {
@@ -43,4 +44,26 @@ public class Message
     public string candidate;
     public string sdpMid;
     public int sdpMLineIndex;
+}
+
+[Serializable]
+public class MapItemData
+{
+    public string @class;
+    public float x;
+    public float y;
+    public float z;
+    public double last_seen;
+
+    public override string ToString()
+    {
+        return $"[Class] : {@class}, [Position]: {x}, {y}, {z}], [Last Seen: {last_seen}]";
+    }
+}
+
+[Serializable]
+public class MapUpdateMessage
+{
+    public string type;
+    public MapItemData data;
 }

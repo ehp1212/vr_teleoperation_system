@@ -65,3 +65,7 @@ unity/headset_layer/Assets/TextMesh Pro/
 unity/headset_layer/Assets/Samples/
 
 unity/headset_layer/Assets/Samples.meta
+
+*.user
+
+*.json1
