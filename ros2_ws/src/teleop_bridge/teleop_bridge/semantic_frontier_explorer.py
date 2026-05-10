@@ -22,11 +22,14 @@ class SemanticFrontierExplorer(Node):
         self.target_class_to_explore = "shelves" 
 
     def map_callback(self, msg):
-
+        return
         """SLAM 지도가 업데이트될 때마다 프론티어를 다시 계산합니다."""
         # 1. ROS 지도를 OpenCV 이미지 배열로 변환
         width = msg.info.width
         height = msg.info.height
+        if width == 0 or height == 0:
+            return
+        
         resolution = msg.info.resolution
         origin_x = msg.info.origin.position.x
         origin_y = msg.info.origin.position.y

@@ -6,6 +6,9 @@ import cv2
 import time
 from scipy.spatial.transform import Rotation as R
 
+# ==========================================
+# Perception Engine
+# ==========================================
 class PerceptionFusionEngine:
     def __init__(
             self,
@@ -133,7 +136,7 @@ class PerceptionFusionEngine:
                 conf = float(box.conf[0].cpu().numpy())
                 cls_name = self.model.names[int(box.cls[0].cpu().numpy())]
                 
-                if conf < 0.5:
+                if conf < 0.25:
                     continue
 
                 dx1 = int(x1 * sx)
@@ -144,8 +147,10 @@ class PerceptionFusionEngine:
                 # --------------------
                 # 1. Get Depth 
                 # --------------------
-                # z_target_meters = self._get_roi_depth(dx1, dy1, dx2, dy2, depth_img)
-
+                z_target_meters = self._get_roi_depth(dx1, dy1, dx2, dy2, depth_img)
+                if z_target_meters == 0.0:
+                            continue
+                
                 # --------------------
                 # 2. Calculate the center pixel (u, v) of the bounding box
                 # --------------------
