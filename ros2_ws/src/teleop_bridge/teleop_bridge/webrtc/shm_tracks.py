@@ -5,6 +5,9 @@ from aiortc import VideoStreamTrack
 from av import VideoFrame
 from multiprocessing import shared_memory
 
+from teleop_bridge.utils.logger import logger
+
+
 class ShmVideoTrack(VideoStreamTrack):
     def __init__(self, name, shm_name, shape, coordinator, format="bgr24"):
         super().__init__()
@@ -25,26 +28,31 @@ class ShmVideoTrack(VideoStreamTrack):
         In order to pass frame_id, convert value to barcoded images
         Maximum value for frame_id: 32 bits
         """
-        
-        # Waiting for coordinator
-        await self.coordinator.webrtc_ready_event.wait()
 
-        pts, time_base = await self.next_timestamp()
+        try:
+            # Waiting for coordinator
+            await self.coordinator.webrtc_ready_event.wait()
 
-        # ------------------------------
-        # Embed frame_id
-        # ------------------------------
-        frame_id = self.coordinator.global_frame_id
-        t0_b = int(time.time() * 1000) & 0xFFFFFFFF
-        self.logger.log("send_request", self.current_frame_id, t0_b, self.name)
+            pts, time_base = await self.next_timestamp()
 
-        self.embed_barcode(frame_id, t0_b)
+            # ------------------------------
+            # Embed frame_id
+            # ------------------------------
+            frame_id = self.coordinator.global_frame_id
+            t0_b = int(time.time() * 1000) & 0xFFFFFFFF
 
-        frame = VideoFrame.from_ndarray(self.shared_view, format=self.format)
-        frame.pts = pts
-        frame.time_base = time_base
-        
-        return frame
+            # TODO: Proper logging
+            # logger.log("send_request", frame_id, t0_b, self.name)
+
+            self.embed_barcode(frame_id, t0_b)
+
+            frame = VideoFrame.from_ndarray(self.shared_view, format=self.format)
+            frame.pts = pts
+            frame.time_base = time_base
+            
+            return frame
+        except Exception as e:
+            print("Error : ", e)
     
 class RgbVideoTrack(ShmVideoTrack):
     def __init__(self, name, shm_name, shape, coordinator):

@@ -1,3 +1,5 @@
+import os
+from glob import glob
 from setuptools import find_packages, setup
 
 package_name = 'teleop_bridge'
@@ -10,8 +12,16 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+
+        # Include launch folder
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        # (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        "setuptools", 
+        "ultralytics>=8.0.0",
+        "opencv-python",
+        ],
     zip_safe=True,
     maintainer='eun',
     maintainer_email='eunhyeon1212p@gmail.com',
@@ -24,8 +34,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'webrtc_node = teleop_bridge.main:main',
-            'webrtc_bridge_node = teleop_bridge.multi_main:main',
+            'bridge_node = teleop_bridge.main:main',
         ],
     },
 )
