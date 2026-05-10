@@ -10,11 +10,10 @@
 # /[Uu]nity/headset_layer/[Mm]emoryCaptures/
 # /[Uu]nity/headset_layer/
 
-# # Unity 자동 생성 프로젝트 파일들
-# /[Uu]nity/*.csproj
-# /[Uu]nity/*.sln
-# /[Uu]nity/*.unityproj
-# /[Uu]nity/*.userprefs
+/unity/headset_layer/*.csproj
+/unity/headset_layer/*.sln
+/unity/headset_layer/*.unityproj
+/unity/headset_layer/*.userprefs
 
 # ==========================================
 # 2. Isaac Sim & Python (isaac)
