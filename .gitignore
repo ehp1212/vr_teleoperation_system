@@ -1,14 +1,14 @@
 # # ==========================================
 # # 1. Unity (unity)
 # # ==========================================
-# /[Uu]nity/unity_humanoid/[Ll]ibrary/
-# /[Uu]nity/unity_humanoid/[Tt]emp/
-# /[Uu]nity/unity_humanoid/[Oo]bj/
-# /[Uu]nity/unity_humanoid/[Bb]uild/
-# /[Uu]nity/unity_humanoid/[Bb]uilds/
-# /[Uu]nity/unity_humanoid/[Ll]ogs/
-# /[Uu]nity/unity_humanoid/[Mm]emoryCaptures/
-# /[Uu]nity/unity_humanoid/UserSettings/
+# /[Uu]nity/headset_layer/[Ll]ibrary/
+# /[Uu]nity/headset_layer/[Tt]emp/
+# /[Uu]nity/headset_layer/[Oo]bj/
+# /[Uu]nity/headset_layer/[Bb]uild/
+# /[Uu]nity/headset_layer/[Bb]uilds/
+# /[Uu]nity/headset_layer/[Ll]ogs/
+# /[Uu]nity/headset_layer/[Mm]emoryCaptures/
+# /[Uu]nity/headset_layer/
 
 # # Unity 자동 생성 프로젝트 파일들
 # /[Uu]nity/*.csproj
@@ -59,3 +59,26 @@
 # *.unitypackage
 
 ros2_ws/ros_log.jsonl
+
+unity/headset_layer/Assets/Samples/
+
+unity/headset_layer/Assets/TextMesh Pro/
+
+unity/headset_layer/Library/
+
+unity/headset_layer/Logs/
+
+unity/headset_layer/UserSettings/
+
+unity/headset_layer/Assets/Samples.meta
+
+unity/*.csproj
+unity/*.sln
+unity/*.unityproj
+unity/*.userprefs
+
+*.csproj
+
+*.sln
+
+unity/headset_layer/obj/Debug/
